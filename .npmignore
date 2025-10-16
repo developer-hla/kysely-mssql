@@ -1,0 +1,25 @@
+# Source
+src/
+*.spec.ts
+*.test.ts
+
+# Config
+tsconfig.json
+.eslintrc.js
+.prettierrc
+
+# CI/CD
+.github/
+
+# Development
+examples/
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+*.log
+.DS_Store
