@@ -42,12 +42,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hunter-ashmore/kysely-mssql.git"
+    "url": "git+https://github.com/developer-hla/kysely-mssql.git"
   },
   "bugs": {
-    "url": "https://github.com/hunter-ashmore/kysely-mssql/issues"
+    "url": "https://github.com/developer-hla/kysely-mssql/issues"
   },
-  "homepage": "https://github.com/hunter-ashmore/kysely-mssql#readme",
+  "homepage": "https://github.com/developer-hla/kysely-mssql#readme",
   "peerDependencies": {
     "kysely": "^0.27.0",
     "tedious": "^18.0.0",
