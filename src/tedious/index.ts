@@ -8,7 +8,7 @@
  */
 
 export { mapDatabaseError } from './error-mapper.js';
-export { Request } from './request.js';
+export { Request } from './Request.js';
 export {
   TEDIOUS_TYPE_NCHAR_OVERWRITE,
   TEDIOUS_TYPE_NVARCHAR_OVERWRITE,
