@@ -18,13 +18,13 @@ const rootDir = join(__dirname, '..');
 // Add type: "commonjs" to dist/cjs
 writeFileSync(
   join(rootDir, 'dist', 'cjs', 'package.json'),
-  JSON.stringify({ type: 'commonjs', sideEffects: false }, null, 2)
+  JSON.stringify({ type: 'commonjs', sideEffects: false }, null, 2),
 );
 
 // Add type: "module" to dist/esm
 writeFileSync(
   join(rootDir, 'dist', 'esm', 'package.json'),
-  JSON.stringify({ type: 'module', sideEffects: false }, null, 2)
+  JSON.stringify({ type: 'module', sideEffects: false }, null, 2),
 );
 
 console.log('✓ Added package.json files to dist/cjs and dist/esm');
