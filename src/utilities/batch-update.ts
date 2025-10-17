@@ -3,7 +3,7 @@ import type { Kysely, Transaction, Updateable } from 'kysely';
 /**
  * Options for configuring batch update behavior.
  */
-export interface BatchUpdateOptions {
+export interface BatchUpdateOptions<K extends string = string> {
   /**
    * Number of records to update per batch.
    *
@@ -26,7 +26,7 @@ export interface BatchUpdateOptions {
    *
    * @default 'id'
    */
-  key?: string | readonly string[];
+  key?: K | readonly K[];
 }
 
 /**
@@ -138,11 +138,15 @@ export type UpdateObjectWithKey<T, K extends keyof T> = Updateable<T> & Required
  * // Each record updates only the fields provided
  * ```
  */
-export async function batchUpdate<DB, TB extends keyof DB & string>(
+export async function batchUpdate<
+  DB,
+  TB extends keyof DB & string,
+  K extends keyof DB[TB] & string = Extract<keyof DB[TB] & string, 'id'>,
+>(
   executor: Kysely<DB> | Transaction<DB>,
   table: TB,
   values: readonly Updateable<DB[TB]>[],
-  options?: BatchUpdateOptions,
+  options?: BatchUpdateOptions<K>,
 ): Promise<void> {
   // Handle empty array
   if (values.length === 0) {
@@ -150,8 +154,8 @@ export async function batchUpdate<DB, TB extends keyof DB & string>(
   }
 
   const batchSize = options?.batchSize ?? 1000;
-  const keyOption = options?.key ?? 'id';
-  const keys = Array.isArray(keyOption) ? keyOption : [keyOption];
+  const keyOption = (options?.key ?? 'id') as K | readonly K[];
+  const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
 
   // Process in batches
   for (let i = 0; i < values.length; i += batchSize) {
@@ -159,26 +163,31 @@ export async function batchUpdate<DB, TB extends keyof DB & string>(
 
     // Execute each update in the batch
     for (const record of batch) {
+      const typedRecord = record as Record<string, unknown>;
+
       // Validate all key fields are present
       for (const key of keys) {
-        const keyValue = (record as any)[key];
+        const keyValue = typedRecord[key];
         if (keyValue === undefined) {
           throw new Error(`Key field '${key}' is missing in update object`);
         }
       }
 
       // Extract the keys from the update object
-      const updateData = { ...record } as any;
+      const updateData = { ...typedRecord };
       for (const key of keys) {
         delete updateData[key];
       }
 
       // Build query with WHERE clauses for all keys
+      // Note: Using `as any` here is necessary because Kysely's complex `ExtractTableAlias`
+      // types don't perfectly match our runtime-constructed updateData and key references.
+      // The function signature ensures user-facing type safety (K extends keyof DB[TB]).
       let query = executor.updateTable(table).set(updateData as any);
 
       for (const key of keys) {
-        const keyValue = (record as any)[key];
-        query = query.where(key as any, '=', keyValue as any);
+        const keyValue = typedRecord[key];
+        query = query.where(key as any, '=', keyValue);
       }
 
       await query.execute();
