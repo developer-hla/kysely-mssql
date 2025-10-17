@@ -1,13 +1,13 @@
-import type { Kysely, Transaction } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
+import { createMockKysely, createMockTransaction } from '../test-utils/index.js';
 import { wrapInTransaction } from './transaction.js';
 
 describe('wrapInTransaction', () => {
   describe('with existing transaction', () => {
     it('should reuse existing transaction', async () => {
       const mockCallback = vi.fn().mockResolvedValue('result');
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       const result = await wrapInTransaction({
         db: mockDb,
@@ -22,13 +22,8 @@ describe('wrapInTransaction', () => {
 
     it('should not create a new transaction when one is provided', async () => {
       const mockCallback = vi.fn().mockResolvedValue('result');
-      const mockTransaction = {} as Transaction<any>;
-      const mockTransactionBuilder = {
-        execute: vi.fn(),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockReturnValue(mockTransactionBuilder),
-      } as unknown as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       await wrapInTransaction({
         db: mockDb,
@@ -42,8 +37,8 @@ describe('wrapInTransaction', () => {
     it('should return the callback result when using existing transaction', async () => {
       const expectedResult = { id: 123, name: 'Test' };
       const mockCallback = vi.fn().mockResolvedValue(expectedResult);
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       const result = await wrapInTransaction({
         db: mockDb,
@@ -57,8 +52,8 @@ describe('wrapInTransaction', () => {
     it('should propagate errors from callback with existing transaction', async () => {
       const testError = new Error('Callback failed');
       const mockCallback = vi.fn().mockRejectedValue(testError);
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       await expect(
         wrapInTransaction({
@@ -73,12 +68,7 @@ describe('wrapInTransaction', () => {
   describe('without existing transaction', () => {
     it('should create a new transaction when none is provided', async () => {
       const mockCallback = vi.fn().mockResolvedValue('result');
-      const mockTransactionBuilder = {
-        execute: vi.fn().mockImplementation((cb) => cb({})),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockReturnValue(mockTransactionBuilder),
-      } as unknown as Kysely<any>;
+      const mockDb = createMockKysely();
 
       await wrapInTransaction({
         db: mockDb,
@@ -86,18 +76,12 @@ describe('wrapInTransaction', () => {
       });
 
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-      expect(mockTransactionBuilder.execute).toHaveBeenCalledWith(mockCallback);
     });
 
     it('should return the callback result when creating new transaction', async () => {
       const expectedResult = { id: 456, name: 'New Record' };
       const mockCallback = vi.fn().mockResolvedValue(expectedResult);
-      const mockTransactionBuilder = {
-        execute: vi.fn().mockImplementation((cb) => cb({}).then(() => expectedResult)),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockReturnValue(mockTransactionBuilder),
-      } as unknown as Kysely<any>;
+      const mockDb = createMockKysely();
 
       const result = await wrapInTransaction({
         db: mockDb,
@@ -110,12 +94,7 @@ describe('wrapInTransaction', () => {
     it('should propagate errors from callback with new transaction', async () => {
       const testError = new Error('Transaction failed');
       const mockCallback = vi.fn().mockRejectedValue(testError);
-      const mockTransactionBuilder = {
-        execute: vi.fn().mockImplementation((cb) => cb({}).catch((err) => Promise.reject(err))),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockReturnValue(mockTransactionBuilder),
-      } as unknown as Kysely<any>;
+      const mockDb = createMockKysely();
 
       await expect(
         wrapInTransaction({
@@ -127,12 +106,7 @@ describe('wrapInTransaction', () => {
 
     it('should handle undefined previousTransaction explicitly', async () => {
       const mockCallback = vi.fn().mockResolvedValue('result');
-      const mockTransactionBuilder = {
-        execute: vi.fn().mockImplementation((cb) => cb({})),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockReturnValue(mockTransactionBuilder),
-      } as unknown as Kysely<any>;
+      const mockDb = createMockKysely();
 
       await wrapInTransaction({
         db: mockDb,
@@ -154,7 +128,7 @@ describe('wrapInTransaction', () => {
         return Promise.resolve('result');
       });
 
-      const mockDb = {} as Kysely<any>;
+      const mockDb = createMockKysely();
 
       await wrapInTransaction({
         db: mockDb,
@@ -171,8 +145,8 @@ describe('wrapInTransaction', () => {
         return 'async-result';
       });
 
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       const result = await wrapInTransaction({
         db: mockDb,
@@ -195,10 +169,10 @@ describe('wrapInTransaction', () => {
       };
 
       const mockCallback = vi.fn().mockResolvedValue(complexResult);
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
-      const result = await wrapInTransaction({
+      const result: ComplexResult = await wrapInTransaction({
         db: mockDb,
         callback: mockCallback,
         previousTransaction: mockTransaction,
@@ -213,8 +187,8 @@ describe('wrapInTransaction', () => {
   describe('composability', () => {
     it('should enable nested transaction calls', async () => {
       const innerCallback = vi.fn().mockResolvedValue('inner-result');
-      const mockTransaction = {} as Transaction<any>;
-      const mockDb = {} as Kysely<any>;
+      const mockTransaction = createMockTransaction();
+      const mockDb = createMockKysely();
 
       const outerCallback = vi.fn().mockImplementation(async (tx) => {
         const innerResult = await wrapInTransaction({

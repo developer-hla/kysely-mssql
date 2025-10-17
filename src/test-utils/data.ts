@@ -104,3 +104,86 @@ export const SAMPLE_STACK_TRACES = {
     at Object.<anonymous> (/project/node_modules/kysely/dist/index.js:100:5)
     at getUserById (/project/src/services/user.service.ts:42:15)`,
 } as const;
+
+/**
+ * Sample data generators for common test scenarios.
+ */
+export const SAMPLE_DATA = {
+  /**
+   * Creates a sample user record with optional overrides.
+   */
+  user: (overrides?: {
+    id?: number;
+    name?: string;
+    email?: string;
+    status?: 'active' | 'inactive' | 'suspended';
+  }) => ({
+    id: 1,
+    name: 'Test User',
+    email: 'test@example.com',
+    status: 'active' as const,
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    ...overrides,
+  }),
+
+  /**
+   * Creates a sample post record with optional overrides.
+   */
+  post: (overrides?: {
+    id?: number;
+    userId?: number;
+    title?: string;
+    content?: string;
+    published?: boolean;
+  }) => ({
+    id: 1,
+    userId: 1,
+    title: 'Test Post',
+    content: 'This is a test post content.',
+    published: true,
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    ...overrides,
+  }),
+
+  /**
+   * Creates a sample order record with optional overrides.
+   */
+  order: (overrides?: {
+    id?: number;
+    userId?: number;
+    status?: 'pending' | 'processing' | 'completed' | 'cancelled';
+    total?: number;
+  }) => ({
+    id: 1,
+    userId: 1,
+    status: 'completed' as const,
+    total: 99.99,
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    ...overrides,
+  }),
+
+  /**
+   * Creates a sample product record with optional overrides.
+   */
+  product: (overrides?: {
+    id?: number;
+    name?: string;
+    description?: string;
+    price?: number;
+    stock?: number;
+    active?: boolean;
+  }) => ({
+    id: 1,
+    name: 'Test Product',
+    description: 'A test product for testing.',
+    price: 29.99,
+    stock: 100,
+    active: true,
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    ...overrides,
+  }),
+} as const;
