@@ -34,6 +34,8 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`paginateQuery`**: Type-safe pagination with metadata
 - **`callStoredProcedure`**: Execute stored procedures with typed parameters
 - **`wrapInTransaction`**: Composable transaction helper for building transactional functions
+- **`addQueryHint`**: Add SQL Server query hints (RECOMPILE, MAXDOP, etc.) to optimize queries
+- **`crossDbTable`**: Type-safe cross-database joins with automatic schema handling
 
 ### Smart Logging
 Configurable logging with query and error levels. Integrate with your logging framework (pino, winston, etc.).
@@ -331,6 +333,134 @@ await db.transaction().execute(async (tx) => {
 });
 ```
 
+### 6. Query Hints
+
+Add SQL Server query hints to optimize query execution:
+
+```typescript
+import { addQueryHint } from '@hunter-ashmore/kysely-mssql';
+
+// Force query recompilation (helps with parameter sniffing issues)
+const users = await db
+  .selectFrom('users')
+  .selectAll()
+  .where('status', '=', status) // Parameter-sensitive query
+  .$call((qb) => addQueryHint(qb, 'RECOMPILE'))
+  .execute();
+
+// Limit parallelism to avoid resource contention
+const report = await db
+  .selectFrom('sales')
+  .select(['region', 'total'])
+  .where('year', '=', 2024)
+  .$call((qb) => addQueryHint(qb, 'MAXDOP 4'))
+  .execute();
+
+// Optimize for unknown parameters (better plan stability)
+const search = await db
+  .selectFrom('products')
+  .selectAll()
+  .where('name', 'like', `%${searchTerm}%`)
+  .$call((qb) => addQueryHint(qb, 'OPTIMIZE FOR UNKNOWN'))
+  .execute();
+
+// Multiple hints
+const complexQuery = await db
+  .selectFrom('orders')
+  .innerJoin('customers', 'customers.id', 'orders.customerId')
+  .select(['orders.id', 'customers.name'])
+  .$call((qb) => addQueryHint(qb, ['MAXDOP 4', 'RECOMPILE']))
+  .execute();
+```
+
+**Available Query Hints:**
+- `'RECOMPILE'` - Force query recompilation on each execution
+- `'MAXDOP N'` - Limit maximum degree of parallelism
+- `'OPTIMIZE FOR UNKNOWN'` - Use average statistics instead of parameter sniffing
+- `'KEEPFIXED PLAN'` - Prevent recompilation due to statistics changes
+- `'FAST N'` - Optimize for retrieving first N rows quickly
+- `'HASH GROUP'` / `'HASH JOIN'` / `'HASH UNION'` - Force hash algorithm
+- `'LOOP JOIN'` - Force nested loops join
+- `'MERGE JOIN'` / `'MERGE UNION'` - Force merge algorithm
+- `'MAXRECURSION N'` - Set maximum recursion level for CTEs
+- `'CONCAT UNION'` - Force concatenation instead of merge
+- `'KEEP PLAN'` - Reduce recompilation frequency
+- `'ORDER GROUP'` - Process groups in order
+- `'ROBUST PLAN'` - Optimize for maximum row counts
+
+### 7. Cross-Database Joins
+
+Perform type-safe joins across databases on the same SQL Server instance:
+
+```typescript
+import { crossDbTable } from '@hunter-ashmore/kysely-mssql';
+
+// Define your database schemas
+interface MainDB {
+  users: { id: number; name: string; email: string };
+  orders: { id: number; userId: number; total: number };
+}
+
+interface ArchiveDB {
+  'historical.orders': { id: number; userId: number; archivedAt: Date };
+}
+
+interface ReportingDB {
+  'analytics.sales': { date: Date; total: number };
+}
+
+// Map database names to schemas
+type MyDatabases = {
+  MainDB: MainDB;
+  ArchiveDB: ArchiveDB;
+  ReportingDB: ReportingDB;
+};
+
+// Query with cross-database join (fully type-safe!)
+const results = await db
+  .selectFrom('users') // Current database
+  .innerJoin(
+    crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>(
+      'ArchiveDB',
+      'historical.orders'
+    ),
+    'ArchiveDB.historical.orders.userId',
+    'users.id'
+  )
+  .select(['users.name', 'ArchiveDB.historical.orders.archivedAt'])
+  .execute();
+
+// Join multiple external databases
+const report = await db
+  .selectFrom(crossDbTable<MyDatabases, 'ReportingDB', 'analytics.sales'>(
+    'ReportingDB',
+    'analytics.sales'
+  ))
+  .innerJoin(
+    crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>(
+      'ArchiveDB',
+      'historical.orders'
+    ),
+    'ReportingDB.analytics.sales.date',
+    'ArchiveDB.historical.orders.archivedAt'
+  )
+  .selectAll()
+  .execute();
+
+// Schema handling: defaults to 'dbo' if not specified
+crossDbTable<MyDatabases, 'MainDB', 'users'>('MainDB', 'users');
+// Generates: MainDB.dbo.users
+
+crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>('ArchiveDB', 'historical.orders');
+// Generates: ArchiveDB.historical.orders
+```
+
+**Benefits:**
+- Full TypeScript type safety across databases
+- Compile-time validation of database and table names
+- Automatic schema handling (defaults to 'dbo')
+- Proper SQL identifier escaping
+
 ---
 
 ## Comparison with Plain Kysely
@@ -379,6 +509,8 @@ const db = new Kysely<Database>({ dialect });
 // - No pagination helper
 // - No stored procedure helper
 // - No transaction composition helper
+// - No query hints helper
+// - No cross-database join helper
 ```
 
 ### With This Package
@@ -402,6 +534,8 @@ const db = createConnection<Database>({
 // - Pagination helper included
 // - Stored procedure helper included
 // - Transaction composition helper included
+// - Query hints helper included
+// - Cross-database join helper included
 // - Sensible defaults for everything
 ```
 
@@ -480,6 +614,65 @@ Execute a callback within a transaction (composable).
 ```
 
 **Returns:** Result of callback function
+
+### `addQueryHint<DB, TB, O>(query, hint): SelectQueryBuilder<DB, TB, O>`
+
+Add SQL Server query hints to a SELECT query.
+
+**Parameters:**
+- `query: SelectQueryBuilder<DB, TB, O>` - The Kysely SELECT query
+- `hint: QueryHint | QueryHint[]` - Single hint or array of hints to apply
+
+**Returns:** The query with OPTION clause appended
+
+**Example:**
+```typescript
+const users = await db
+  .selectFrom('users')
+  .selectAll()
+  .$call((qb) => addQueryHint(qb, 'RECOMPILE'))
+  .execute();
+
+// Multiple hints
+const report = await db
+  .selectFrom('sales')
+  .selectAll()
+  .$call((qb) => addQueryHint(qb, ['MAXDOP 4', 'RECOMPILE']))
+  .execute();
+```
+
+### `crossDbTable<DBMap, DB, Table>(database, table)`
+
+Create a type-safe table reference for cross-database joins.
+
+**Type Parameters:**
+- `DBMap` - Type mapping database names to their schemas
+- `DB` - Database name (key in DBMap)
+- `Table` - Table name (key in database schema)
+
+**Parameters:**
+- `database: DB` - The database name
+- `table: Table` - The table name (with or without schema)
+
+**Returns:** Kysely SQL identifier for use in queries
+
+**Example:**
+```typescript
+type MyDatabases = {
+  MainDB: MainSchema,
+  ArchiveDB: ArchiveSchema,
+};
+
+const results = await db
+  .selectFrom('users')
+  .innerJoin(
+    crossDbTable<MyDatabases, 'ArchiveDB', 'orders'>('ArchiveDB', 'orders'),
+    'ArchiveDB.dbo.orders.userId',
+    'users.id'
+  )
+  .selectAll()
+  .execute();
+```
 
 ---
 

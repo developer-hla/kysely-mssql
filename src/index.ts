@@ -68,11 +68,14 @@ export { createLogger, type LogLevel } from './logging/index.js';
 
 // ===== UTILITIES =====
 export {
+  addQueryHint,
   callStoredProcedure,
+  crossDbTable,
   type PaginationMetadata,
   type PaginationParams,
   type PaginationResult,
   paginateQuery,
+  type QueryHint,
   type TransactionOptions,
   wrapInTransaction,
 } from './utilities/index.js';
