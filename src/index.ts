@@ -69,6 +69,9 @@ export { createLogger, type LogLevel } from './logging/index.js';
 // ===== UTILITIES =====
 export {
   addQueryHint,
+  type BatchInsertOptions,
+  batchInsert,
+  buildSearchFilter,
   callStoredProcedure,
   crossDbTable,
   deduplicateJoins,
@@ -77,6 +80,8 @@ export {
   type PaginationResult,
   paginateQuery,
   type QueryHint,
+  type SearchFilterOptions,
+  type SearchMode,
   type TransactionOptions,
   wrapInTransaction,
 } from './utilities/index.js';

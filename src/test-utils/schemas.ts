@@ -6,6 +6,8 @@
  * own schemas.
  */
 
+import type { Generated } from 'kysely';
+
 /**
  * Standard test database schema with common tables.
  * Suitable for most generic database operation tests.
@@ -64,14 +66,17 @@ export interface TestDatabase {
  */
 export interface MinimalTestDatabase {
   users: {
-    id: number;
+    id: Generated<number>;
     name: string;
     email: string;
   };
 
   posts: {
-    id: number;
+    id: Generated<number>;
     userId: number;
     title: string;
+    content: Generated<string>;
+    viewCount: Generated<number>;
+    status: Generated<string>;
   };
 }

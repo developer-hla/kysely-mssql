@@ -37,6 +37,8 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`addQueryHint`**: Add SQL Server query hints (RECOMPILE, MAXDOP, etc.) to optimize queries
 - **`crossDbTable`**: Type-safe cross-database joins with automatic schema handling
 - **`deduplicateJoins`**: Automatically remove duplicate joins from dynamic queries
+- **`buildSearchFilter`**: Multi-column LIKE search with OR logic and wildcard escaping
+- **`batchInsert`**: Bulk insert records in batches to avoid SQL Server parameter limits
 
 ### Smart Logging
 Configurable logging with query and error levels. Integrate with your logging framework (pino, winston, etc.).
@@ -548,6 +550,144 @@ function buildPlotQuery(filters: PlotFilters) {
 **Behind the Scenes:**
 This is a convenience wrapper around Kysely's built-in `DeduplicateJoinsPlugin`. It's applied locally to specific queries rather than globally to avoid edge cases with complex subqueries.
 
+### 9. Search Filtering
+
+Build multi-column search filters with automatic wildcard escaping:
+
+```typescript
+import { buildSearchFilter } from '@hunter-ashmore/kysely-mssql';
+
+// Basic search across multiple columns
+const results = await db
+  .selectFrom('posts')
+  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .selectAll()
+  .execute();
+// SQL: WHERE (title LIKE '%searchTerm%' OR content LIKE '%searchTerm%')
+
+// Different search modes
+const users = await db
+  .selectFrom('users')
+  .where(buildSearchFilter(['name'], 'John', { mode: 'startsWith' }))
+  .selectAll()
+  .execute();
+// SQL: WHERE name LIKE 'John%'
+
+const emails = await db
+  .selectFrom('users')
+  .where(buildSearchFilter(['email'], '@gmail.com', { mode: 'endsWith' }))
+  .selectAll()
+  .execute();
+// SQL: WHERE email LIKE '%@gmail.com'
+
+// Conditional search with other filters
+let query = db
+  .selectFrom('products')
+  .where('status', '=', 'active')
+  .selectAll();
+
+if (searchTerm) {
+  query = query.where(
+    buildSearchFilter(['name', 'description', 'sku'], searchTerm)
+  );
+}
+
+const products = await query.execute();
+
+// With pagination
+const query = db
+  .selectFrom('posts')
+  .where('status', '=', 'published')
+  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .selectAll()
+  .orderBy('created_at', 'desc');
+
+const result = await paginateQuery(query, { page: 1, limit: 20 });
+```
+
+**Features:**
+- Automatically escapes special LIKE characters (%, _, [, ])
+- Three search modes: 'contains' (default), 'startsWith', 'endsWith'
+- Type-safe column names (compile-time checking)
+- Works seamlessly with other WHERE clauses
+- OR logic across multiple columns
+
+**When to Use:**
+- Search functionality across multiple text columns
+- User-facing search features (products, articles, users)
+- Filtering with partial matches
+- Any scenario requiring flexible text search
+
+### 10. Bulk Operations
+
+Insert large datasets efficiently in batches to avoid SQL Server parameter limits:
+
+```typescript
+import { batchInsert } from '@hunter-ashmore/kysely-mssql';
+
+// Basic usage: insert 10,000 products in batches
+const products = Array.from({ length: 10000 }, (_, i) => ({
+  name: `Product ${i}`,
+  price: 10.99,
+  sku: `SKU-${i}`,
+}));
+
+await batchInsert(db, 'products', products);
+// Automatically splits into batches of 1000 (default)
+// Executes 10 INSERT statements
+
+// Custom batch size for parameter-heavy records
+const largeRecords = [...]; // Records with many columns
+
+await batchInsert(db, 'large_table', largeRecords, { batchSize: 500 });
+// Reduces parameter count per query to stay within SQL Server's 2100 limit
+
+// Within a transaction (all batches atomic)
+await db.transaction().execute(async (tx) => {
+  await batchInsert(tx, 'users', users);
+  await batchInsert(tx, 'user_profiles', profiles);
+
+  // All batches succeed or all rollback
+});
+
+// With error handling
+try {
+  await batchInsert(db, 'products', products, { batchSize: 1000 });
+  console.log(`Successfully inserted ${products.length} products`);
+} catch (error) {
+  if (error instanceof DuplicateKeyError) {
+    console.error('Some products already exist');
+  }
+  throw error;
+}
+```
+
+**Why Use Batching?**
+
+SQL Server has a parameter limit of 2100 per query. A single INSERT with many records and columns can easily exceed this:
+
+```typescript
+// Without batching (can fail with large datasets):
+// 1000 records × 20 columns = 20,000 parameters (exceeds limit!)
+await db.insertInto('products').values(largeArray).execute(); // Error!
+
+// With batching (safe):
+// 500 records × 20 columns = 10,000 parameters per batch (safe)
+await batchInsert(db, 'products', largeArray, { batchSize: 500 }); // Success!
+```
+
+**Performance Benefits:**
+- Reduces round-trips vs individual inserts
+- Stays within parameter limits automatically
+- Optimizes batch size for your data shape
+- Works with transaction guarantees
+
+**When to Use:**
+- Bulk imports from external sources
+- Data migrations
+- Batch processing jobs
+- Any scenario inserting hundreds or thousands of records
+
 ---
 
 ## Comparison with Plain Kysely
@@ -599,6 +739,8 @@ const db = new Kysely<Database>({ dialect });
 // - No query hints helper
 // - No cross-database join helper
 // - No deduplicate joins helper
+// - No search filter helper
+// - No batch insert helper
 ```
 
 ### With This Package
@@ -625,6 +767,8 @@ const db = createConnection<Database>({
 // - Query hints helper included
 // - Cross-database join helper included
 // - Deduplicate joins helper included
+// - Search filter helper included
+// - Batch insert helper included
 // - Sensible defaults for everything
 ```
 
@@ -786,6 +930,97 @@ const query = db
 const query = deduplicateJoins(
   db.selectFrom('users').leftJoin('posts', 'posts.userId', 'users.id')
 );
+```
+
+### `buildSearchFilter<DB, TB>(columns, searchTerm, options?)`
+
+Build a multi-column search filter with OR logic and automatic wildcard escaping.
+
+**Type Parameters:**
+- `DB` - Database schema type
+- `TB` - Table name
+
+**Parameters:**
+- `columns: readonly (keyof DB[TB] & string)[]` - Array of column names to search
+- `searchTerm: string` - The term to search for
+- `options?: SearchFilterOptions` - Optional search configuration
+
+**SearchFilterOptions:**
+- `mode?: 'contains' | 'startsWith' | 'endsWith'` - Search mode (default: 'contains')
+
+**Returns:** Expression builder function for use with `.where()`
+
+**Features:**
+- Automatically escapes special LIKE characters (%, _, [, ])
+- Type-safe column names (compile-time validation)
+- OR logic across all specified columns
+- Three search modes for different matching patterns
+
+**Example:**
+```typescript
+// Basic usage
+const results = await db
+  .selectFrom('posts')
+  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .selectAll()
+  .execute();
+
+// With startsWith mode
+const users = await db
+  .selectFrom('users')
+  .where(buildSearchFilter(['name'], 'John', { mode: 'startsWith' }))
+  .selectAll()
+  .execute();
+
+// Conditional application
+let query = db.selectFrom('products').selectAll();
+if (searchTerm) {
+  query = query.where(buildSearchFilter(['name', 'sku'], searchTerm));
+}
+```
+
+### `batchInsert<DB, TB>(executor, table, values, options?): Promise<void>`
+
+Insert records in batches to avoid SQL Server parameter limits.
+
+**Type Parameters:**
+- `DB` - Database schema type
+- `TB` - Table name
+
+**Parameters:**
+- `executor: Kysely<DB> | Transaction<DB>` - Database or transaction instance
+- `table: TB` - Table name to insert into
+- `values: readonly Insertable<DB[TB]>[]` - Array of records to insert
+- `options?: BatchInsertOptions` - Optional batch configuration
+
+**BatchInsertOptions:**
+- `batchSize?: number` - Records per batch (default: 1000)
+
+**Returns:** Promise<void>
+
+**Why Use This:**
+SQL Server has a parameter limit of 2100. With many columns or records, you can easily exceed this limit. This function automatically chunks your inserts into safe batches.
+
+**Example:**
+```typescript
+// Basic usage
+const products = Array.from({ length: 10000 }, (_, i) => ({
+  name: `Product ${i}`,
+  price: 10.99,
+}));
+
+await batchInsert(db, 'products', products);
+// Executes 10 INSERT statements of 1000 records each
+
+// Custom batch size
+await batchInsert(db, 'products', products, { batchSize: 500 });
+
+// Within a transaction
+await db.transaction().execute(async (tx) => {
+  await batchInsert(tx, 'users', users);
+  await batchInsert(tx, 'profiles', profiles);
+  // All batches are atomic
+});
 ```
 
 ---
