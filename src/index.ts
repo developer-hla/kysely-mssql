@@ -70,7 +70,9 @@ export { createLogger, type LogLevel } from './logging/index.js';
 export {
   addQueryHint,
   type BatchInsertOptions,
+  type BatchUpdateOptions,
   batchInsert,
+  batchUpdate,
   buildSearchFilter,
   callStoredProcedure,
   crossDbTable,

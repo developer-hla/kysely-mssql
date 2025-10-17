@@ -39,6 +39,7 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`deduplicateJoins`**: Automatically remove duplicate joins from dynamic queries
 - **`buildSearchFilter`**: Multi-column LIKE search with OR logic and wildcard escaping
 - **`batchInsert`**: Bulk insert records in batches to avoid SQL Server parameter limits
+- **`batchUpdate`**: Bulk update records in batches with single or composite key support
 
 ### Smart Logging
 Configurable logging with query and error levels. Integrate with your logging framework (pino, winston, etc.).
@@ -688,6 +689,81 @@ await batchInsert(db, 'products', largeArray, { batchSize: 500 }); // Success!
 - Batch processing jobs
 - Any scenario inserting hundreds or thousands of records
 
+#### Batch Updates
+
+Update large datasets efficiently in batches:
+
+```typescript
+import { batchUpdate } from '@hunter-ashmore/kysely-mssql';
+
+// Basic usage: update 5,000 product prices
+const updates = [
+  { id: 1, price: 19.99, stock: 50 },
+  { id: 2, price: 29.99, stock: 30 },
+  // ... 5,000 more updates
+];
+
+await batchUpdate(db, 'products', updates);
+// Automatically batches updates (default: 1000 per batch)
+// Each record: UPDATE products SET price=@1, stock=@2 WHERE id=@3
+
+// Custom batch size for performance tuning
+await batchUpdate(db, 'users', userUpdates, { batchSize: 500 });
+
+// Custom key field (default is 'id')
+const updates = [
+  { email: 'user1@example.com', status: 'active' },
+  { email: 'user2@example.com', status: 'inactive' },
+];
+
+await batchUpdate(db, 'users', updates, { key: 'email' });
+// UPDATE users SET status=@1 WHERE email=@2
+
+// Composite keys for multi-column matching
+const updates = [
+  { userType: 'admin', active: true, permissions: 'full' },
+  { userType: 'user', active: true, permissions: 'limited' },
+  { userType: 'guest', active: false, permissions: 'read' },
+];
+
+await batchUpdate(db, 'user_settings', updates, {
+  key: ['userType', 'active']
+});
+// UPDATE user_settings SET permissions=@1 WHERE userType=@2 AND active=@3
+
+// Within a transaction (all batches atomic)
+await db.transaction().execute(async (tx) => {
+  await batchUpdate(tx, 'products', productUpdates);
+  await batchUpdate(tx, 'inventory', inventoryUpdates);
+
+  // All batches succeed or all rollback
+});
+
+// With error handling
+try {
+  await batchUpdate(db, 'products', updates, { batchSize: 1000 });
+  console.log(`Successfully updated ${updates.length} products`);
+} catch (error) {
+  if (error instanceof ForeignKeyError) {
+    console.error('Some updates reference invalid foreign keys');
+  }
+  throw error;
+}
+```
+
+**Key Features:**
+- Single key field support (default: 'id')
+- Composite key support (multiple WHERE conditions)
+- Automatic batching to manage query load
+- Transaction support for atomic operations
+- Validates that key fields are present in each update object
+
+**When to Use:**
+- Bulk price updates or status changes
+- Data synchronization from external sources
+- Batch processing jobs that modify existing records
+- Any scenario updating hundreds or thousands of records
+
 ---
 
 ## Comparison with Plain Kysely
@@ -741,6 +817,7 @@ const db = new Kysely<Database>({ dialect });
 // - No deduplicate joins helper
 // - No search filter helper
 // - No batch insert helper
+// - No batch update helper
 ```
 
 ### With This Package
@@ -769,6 +846,7 @@ const db = createConnection<Database>({
 // - Deduplicate joins helper included
 // - Search filter helper included
 // - Batch insert helper included
+// - Batch update helper included
 // - Sensible defaults for everything
 ```
 
@@ -1019,6 +1097,58 @@ await batchInsert(db, 'products', products, { batchSize: 500 });
 await db.transaction().execute(async (tx) => {
   await batchInsert(tx, 'users', users);
   await batchInsert(tx, 'profiles', profiles);
+  // All batches are atomic
+});
+```
+
+### `batchUpdate<DB, TB>(executor, table, values, options?): Promise<void>`
+
+Update records in batches with single or composite key support.
+
+**Type Parameters:**
+- `DB` - Database schema type
+- `TB` - Table name
+
+**Parameters:**
+- `executor: Kysely<DB> | Transaction<DB>` - Database or transaction instance
+- `table: TB` - Table name to update
+- `values: readonly Updateable<DB[TB]>[]` - Array of records to update
+- `options?: BatchUpdateOptions` - Optional batch configuration
+
+**BatchUpdateOptions:**
+- `batchSize?: number` - Records per batch (default: 1000)
+- `key?: string | readonly string[]` - Column name(s) for WHERE clause (default: 'id')
+
+**Returns:** Promise<void>
+
+**How It Works:**
+Each record must include the key field(s). The function extracts key values for the WHERE clause and uses remaining fields for the SET clause. Supports both single key fields and composite keys for complex matching.
+
+**Example:**
+```typescript
+// Basic usage (uses 'id' as key)
+const updates = [
+  { id: 1, price: 19.99, stock: 50 },
+  { id: 2, price: 29.99, stock: 30 },
+];
+
+await batchUpdate(db, 'products', updates);
+// UPDATE products SET price=@1, stock=@2 WHERE id=@3
+
+// Custom single key
+await batchUpdate(db, 'users', updates, { key: 'email' });
+// UPDATE users SET status=@1 WHERE email=@2
+
+// Composite key
+await batchUpdate(db, 'user_settings', updates, {
+  key: ['userType', 'active']
+});
+// UPDATE user_settings SET permissions=@1 WHERE userType=@2 AND active=@3
+
+// Within a transaction
+await db.transaction().execute(async (tx) => {
+  await batchUpdate(tx, 'products', productUpdates);
+  await batchUpdate(tx, 'inventory', inventoryUpdates);
   // All batches are atomic
 });
 ```
