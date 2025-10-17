@@ -67,10 +67,8 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * Upserts (insert or update) records in batches using SQL Server's MERGE statement.
  *
  * For each record, if a matching row exists (based on key fields), it updates the row.
- * If no match exists, it inserts a new row. This is an atomic operation per batch.
- *
- * The function uses SQL Server's MERGE statement with a derived table source,
- * which provides optimal performance for bulk upsert operations.
+ * If no match exists, it inserts a new row. Uses SQL Server's MERGE statement for
+ * optimal bulk upsert performance.
  *
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to upsert into
@@ -78,43 +76,21 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * @param options - Optional configuration
  *
  * @example
- * Basic usage with default id key:
+ * Basic usage:
  * ```typescript
- * const products = [
+ * await batchUpsert(db, 'products', [
  *   { id: 1, name: 'Product 1', price: 19.99 },
- *   { id: 2, name: 'Product 2', price: 29.99 },
  *   { id: 999, name: 'New Product', price: 39.99 }
- * ];
- *
- * await batchUpsert(db, 'products', products);
- * // Updates products 1 and 2 if they exist, inserts product 999
+ * ]);
+ * // Updates product 1 if exists, inserts product 999
  * ```
  *
  * @example
- * With custom key field:
+ * Composite key for multi-column matching:
  * ```typescript
- * const users = [
- *   { email: 'alice@example.com', name: 'Alice Updated', role: 'admin' },
- *   { email: 'bob@example.com', name: 'Bob', role: 'user' },
- * ];
- *
- * await batchUpsert(db, 'users', users, { key: 'email' });
- * // Matches on email: updates Alice if exists, inserts Bob if new
- * ```
- *
- * @example
- * With composite key (multiple matching fields):
- * ```typescript
- * const settings = [
- *   { userId: 1, settingKey: 'theme', value: 'dark' },
- *   { userId: 1, settingKey: 'language', value: 'en' },
- *   { userId: 2, settingKey: 'theme', value: 'light' },
- * ];
- *
  * await batchUpsert(db, 'user_settings', settings, {
  *   key: ['userId', 'settingKey']
  * });
- * // Matches on (userId, settingKey) combination
  * // MERGE ON target.userId = source.userId AND target.settingKey = source.settingKey
  * ```
  *
@@ -122,48 +98,8 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * Within a transaction:
  * ```typescript
  * await db.transaction().execute(async (tx) => {
- *   // Upsert products
  *   await batchUpsert(tx, 'products', productUpdates);
- *
- *   // Upsert inventory
  *   await batchUpsert(tx, 'inventory', inventoryUpdates);
- *
- *   // All upserts are atomic within the transaction
- * });
- * ```
- *
- * @example
- * With error handling:
- * ```typescript
- * try {
- *   await batchUpsert(db, 'products', products, { batchSize: 500 });
- *   console.log(`Successfully upserted ${products.length} products`);
- * } catch (error) {
- *   if (error instanceof ForeignKeyError) {
- *     console.error('Some products reference invalid categories');
- *   }
- *   throw error;
- * }
- * ```
- *
- * @example
- * Syncing data from external API:
- * ```typescript
- * // External API returns full dataset
- * const apiData = await fetchProductsFromAPI();
- *
- * // Map to database schema
- * const products = apiData.map(p => ({
- *   externalId: p.id,
- *   name: p.name,
- *   price: p.price,
- *   lastSynced: new Date()
- * }));
- *
- * // Upsert all - updates existing, inserts new
- * await batchUpsert(db, 'products', products, {
- *   key: 'externalId',
- *   batchSize: 1000
  * });
  * ```
  */

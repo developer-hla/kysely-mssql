@@ -32,10 +32,9 @@ export type UpdateObjectWithKey<T, K extends keyof T> = Updateable<T> & Required
 /**
  * Updates records in batches to avoid SQL Server parameter limits.
  *
- * Each record in the values array must include the key field (default: 'id')
- * which will be used to identify which record to update. The function executes
- * individual UPDATE statements for each record, batched to stay within SQL
- * Server's parameter limits.
+ * Each record must include the key field (default: 'id') to identify which
+ * record to update. Executes individual UPDATE statements batched to stay
+ * within SQL Server's parameter limits.
  *
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to update
@@ -45,92 +44,28 @@ export type UpdateObjectWithKey<T, K extends keyof T> = Updateable<T> & Required
  * @example
  * Basic usage:
  * ```typescript
- * const updates = [
+ * await batchUpdate(db, 'products', [
  *   { id: 1, price: 19.99, stock: 50 },
  *   { id: 2, price: 29.99, stock: 30 },
- *   // ... 10,000 more updates
- * ];
- *
- * await batchUpdate(db, 'products', updates);
- * // Automatically chunks into batches of 1000
- * // Each batch: UPDATE products SET price=@1, stock=@2 WHERE id=@3 (repeated)
+ * ]);
  * ```
  *
  * @example
- * With custom batch size:
+ * Composite key for multi-column matching:
  * ```typescript
- * const userUpdates = [...]; // 5000 users
- *
- * await batchUpdate(db, 'users', userUpdates, { batchSize: 500 });
- * // Executes 10 batches of 500 UPDATE statements each
- * ```
- *
- * @example
- * With custom key field:
- * ```typescript
- * const updates = [
- *   { email: 'user1@example.com', status: 'active' },
- *   { email: 'user2@example.com', status: 'inactive' },
- * ];
- *
- * await batchUpdate(db, 'users', updates, { key: 'email' });
- * // Uses email as the WHERE clause identifier
- * ```
- *
- * @example
- * With composite key (multiple fields):
- * ```typescript
- * const updates = [
- *   { userType: 'admin', active: true, permissions: 'full' },
- *   { userType: 'user', active: true, permissions: 'limited' },
- *   { userType: 'guest', active: false, permissions: 'read' },
- * ];
- *
  * await batchUpdate(db, 'user_settings', updates, {
- *   key: ['userType', 'active']
+ *   key: ['userId', 'settingKey']
  * });
- * // WHERE userType=@1 AND active=@2
+ * // WHERE userId=@1 AND settingKey=@2
  * ```
  *
  * @example
  * Within a transaction:
  * ```typescript
  * await db.transaction().execute(async (tx) => {
- *   // Update products
  *   await batchUpdate(tx, 'products', productUpdates);
- *
- *   // Update inventory
  *   await batchUpdate(tx, 'inventory', inventoryUpdates);
- *
- *   // All batches are part of the same transaction
  * });
- * ```
- *
- * @example
- * With error handling:
- * ```typescript
- * try {
- *   await batchUpdate(db, 'products', updates, { batchSize: 1000 });
- *   console.log(`Successfully updated ${updates.length} products`);
- * } catch (error) {
- *   if (error instanceof ForeignKeyError) {
- *     console.error('Some updates reference invalid foreign keys');
- *   }
- *   throw error;
- * }
- * ```
- *
- * @example
- * Partial updates:
- * ```typescript
- * const updates = [
- *   { id: 1, stock: 45 },        // Only update stock
- *   { id: 2, price: 15.99 },     // Only update price
- *   { id: 3, stock: 30, price: 25.99 }, // Update both
- * ];
- *
- * await batchUpdate(db, 'products', updates);
- * // Each record updates only the fields provided
  * ```
  */
 export async function batchUpdate<
