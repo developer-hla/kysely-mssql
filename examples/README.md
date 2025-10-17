@@ -67,32 +67,25 @@ Demonstrates typed error handling with specific SQL Server error classes. Shows 
 ---
 
 ### [with-pagination.ts](./with-pagination.ts)
-**Topics:** Pagination, metadata, filtering, search
+**Topics:** Pagination, metadata, search
 
-Complete pagination examples with the `paginateQuery` utility. Shows how to:
+Focused pagination examples with the `paginateQuery` utility. Shows how to:
 - Paginate basic queries
-- Paginate with filtering (WHERE clauses)
 - Paginate with JOINs
-- Paginate search results
-- Build pagination UI helpers
-- Iterate through all pages
-- Handle edge cases (empty results, last page, etc.)
+- Paginate search results with `buildSearchFilter`
 
 **Good for:** List views, search results, data tables
 
 ---
 
 ### [with-transactions.ts](./with-transactions.ts)
-**Topics:** Transaction composition, atomic operations, rollbacks
+**Topics:** Transaction composition, atomic operations
 
-Comprehensive transaction examples with the `wrapInTransaction` utility. Shows how to:
+Transaction examples with the `wrapInTransaction` utility. Shows how to:
 - Create composable transactional functions
-- Use functions standalone (create own transaction)
-- Use functions composed (share existing transaction)
-- Handle transaction rollbacks
-- Build complex business logic (money transfers)
+- Build complex business logic (money transfers with balance checks)
 - Compose multiple operations atomically
-- Nest composable operations
+- Nest composable operations for reusability
 
 **Good for:** Complex business logic, atomic operations, data consistency
 
@@ -101,14 +94,38 @@ Comprehensive transaction examples with the `wrapInTransaction` utility. Shows h
 ### [with-stored-procedures.ts](./with-stored-procedures.ts)
 **Topics:** Stored procedures, typed parameters, wrapper functions
 
-Complete stored procedure examples with the `callStoredProcedure` utility. Shows how to:
+Stored procedure examples with the `callStoredProcedure` utility. Shows how to:
 - Execute basic stored procedures
-- Pass multiple parameters (strings, numbers, booleans, dates, null)
-- Handle different return types (lists, single rows, aggregations)
-- Build type-safe wrapper functions
-- Handle stored procedure errors
+- Pass multiple parameters
+- Build type-safe wrapper functions (best practice)
 
 **Good for:** Legacy databases, performance optimization, complex queries
+
+---
+
+### [batch-operations.ts](./batch-operations.ts)
+**Topics:** Batch inserts, updates, upserts, composite keys
+
+High-performance bulk operations with the `batchInsert`, `batchUpdate`, and `batchUpsert` utilities. Shows how to:
+- Insert 1000+ records efficiently (automatic batching)
+- Update with composite keys (multi-column WHERE clauses)
+- Upsert with composite keys (multi-tenant scenarios)
+- Combine batch operations in transactions
+
+**Good for:** Data imports, API syncs, bulk updates, high-throughput applications
+
+---
+
+### [query-optimization.ts](./query-optimization.ts)
+**Topics:** Query hints, join deduplication
+
+SQL Server-specific optimization features. Shows how to:
+- Use query hints (RECOMPILE, MAXDOP)
+- Control parallelism and query plan caching
+- Prevent duplicate joins in dynamic queries
+- Combine multiple hints
+
+**Good for:** Performance tuning, dynamic query building
 
 ---
 
@@ -163,7 +180,42 @@ CREATE TABLE audit_logs (
     action VARCHAR(255) NOT NULL,
     created_at DATETIME2 DEFAULT GETDATE()
 );
+
+-- For batch-operations.ts examples
+CREATE TABLE products (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    sku VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    last_synced DATETIME2 DEFAULT GETDATE()
+);
+
+CREATE TABLE user_settings (
+    user_id INT NOT NULL,
+    setting_key VARCHAR(100) NOT NULL,
+    value VARCHAR(MAX),
+    updated_at DATETIME2 DEFAULT GETDATE(),
+    PRIMARY KEY (user_id, setting_key),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- For query-optimization.ts examples
+CREATE TABLE regions (
+    code VARCHAR(10) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    country VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE plots (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    region_code VARCHAR(10),
+    FOREIGN KEY (region_code) REFERENCES regions(code)
+);
 ```
+
+### Sample Data
 
 You can create this schema by running:
 
@@ -179,7 +231,7 @@ VALUES
     ('Alice Johnson', 'alice@example.com', 'Marketing', 68000, 75, '2022-05-18');
 ```
 
-## Stored Procedures (for stored-procedure examples)
+## Required Stored Procedures
 
 The [with-stored-procedures.ts](./with-stored-procedures.ts) example references several stored procedures. Create them:
 
@@ -208,50 +260,4 @@ BEGIN
         AND (@Department IS NULL OR department = @Department);
 END;
 GO
-
--- Search users
-CREATE PROCEDURE sp_SearchUsers
-    @Name VARCHAR(255) = NULL,
-    @Email VARCHAR(255) = NULL,
-    @Department VARCHAR(100) = NULL
-AS
-BEGIN
-    SELECT id, name, email, department
-    FROM users
-    WHERE (@Name IS NULL OR name LIKE '%' + @Name + '%')
-        AND (@Email IS NULL OR email LIKE '%' + @Email + '%')
-        AND (@Department IS NULL OR department = @Department);
-END;
-GO
-
--- Get department statistics
-CREATE PROCEDURE sp_GetDepartmentStats
-    @Department VARCHAR(100)
-AS
-BEGIN
-    SELECT
-        department,
-        COUNT(*) as total_employees,
-        AVG(salary) as avg_salary,
-        MIN(salary) as min_salary,
-        MAX(salary) as max_salary
-    FROM users
-    WHERE department = @Department
-    GROUP BY department;
-END;
-GO
 ```
-
-## Tips
-
-- **Start with [basic-connection.ts](./basic-connection.ts)** to understand the fundamentals
-- **Read the comments** - each example includes detailed explanations
-- **Modify the examples** - change queries, add fields, experiment!
-- **Check SQL logs** - Enable `logLevels: ['query', 'error']` to see generated SQL
-- **Use TypeScript** - Examples leverage full type safety, use them as templates
-
-## Need Help?
-
-- Read the main [README.md](../README.md) for API documentation
-- Check [Kysely documentation](https://kysely.dev/docs/intro) for query builder syntax
-- Report issues on GitHub (once published)
