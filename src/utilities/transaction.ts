@@ -103,11 +103,9 @@ export async function wrapInTransaction<DB, T>({
   callback,
   previousTransaction,
 }: TransactionOptions<DB, T>): Promise<T> {
-  // If we have an existing transaction, reuse it
   if (previousTransaction) {
     return callback(previousTransaction);
   }
 
-  // Otherwise, create a new transaction
   return db.transaction().execute(callback);
 }

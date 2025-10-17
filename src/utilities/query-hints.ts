@@ -83,8 +83,6 @@ export function addQueryHint<DB, TB extends keyof DB & string, O>(
   hint: QueryHint | QueryHint[],
 ): SelectQueryBuilder<DB, TB, O> {
   const hints = Array.isArray(hint) ? hint : [hint];
-
-  // Join multiple hints with comma separator
   const hintString = hints.join(', ');
 
   // Use sql.raw to prevent Kysely from creating a parameter for the hint

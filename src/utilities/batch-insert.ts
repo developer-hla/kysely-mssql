@@ -7,11 +7,6 @@ export interface BatchInsertOptions {
   /**
    * Number of records to insert per batch.
    *
-   * SQL Server has parameter limits (2100 parameters) and performance
-   * considerations. A smaller batch size reduces parameter count per query
-   * but increases the number of queries. A larger batch size reduces queries
-   * but may hit parameter limits.
-   *
    * @default 1000
    */
   batchSize?: number;
@@ -103,14 +98,12 @@ export async function batchInsert<DB, TB extends keyof DB & string>(
   values: readonly Insertable<DB[TB]>[],
   options?: BatchInsertOptions,
 ): Promise<void> {
-  // Handle empty array
   if (values.length === 0) {
     return;
   }
 
   const batchSize = options?.batchSize ?? 1000;
 
-  // Process in batches
   for (let i = 0; i < values.length; i += batchSize) {
     const batch = values.slice(i, i + batchSize);
     await executor.insertInto(table).values(batch).execute();

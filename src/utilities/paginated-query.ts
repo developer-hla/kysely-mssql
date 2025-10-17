@@ -77,11 +77,9 @@ export async function paginateQuery<DB, TB extends keyof DB, O>(
   query: SelectQueryBuilder<DB, TB, O>,
   params: PaginationParams = {},
 ): Promise<PaginationResult<O>> {
-  // Apply defaults
   const { page = DEFAULT_PAGINATION_PAGE, limit = DEFAULT_PAGINATION_LIMIT } = params;
   const offset = (page - 1) * limit;
 
-  // Build count query (removes select, limit, offset, orderBy)
   const countQuery = query
     .clearSelect()
     .clearLimit()
@@ -89,7 +87,6 @@ export async function paginateQuery<DB, TB extends keyof DB, O>(
     .clearOrderBy()
     .select(sql.raw<number>('COUNT(*)').as('count'));
 
-  // Build paginated data query
   const queryWithPagination = query.fetch(limit).offset(offset);
 
   // Execute both queries in parallel for performance

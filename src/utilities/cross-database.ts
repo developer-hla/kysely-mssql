@@ -87,6 +87,5 @@ export function crossDbTable<
     return sql`${sql.id(database, 'dbo', table)}`;
   }
 
-  // Table name includes schema, use it directly
   return sql`${sql.id(database, table)}`;
 }

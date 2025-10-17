@@ -7,11 +7,6 @@ export interface BatchUpdateOptions<K extends string = string> {
   /**
    * Number of records to update per batch.
    *
-   * SQL Server has parameter limits (2100 parameters) and performance
-   * considerations. A smaller batch size reduces parameter count per query
-   * but increases the number of queries. A larger batch size reduces queries
-   * but may hit parameter limits.
-   *
    * @default 1000
    */
   batchSize?: number;
@@ -148,7 +143,6 @@ export async function batchUpdate<
   values: readonly Updateable<DB[TB]>[],
   options?: BatchUpdateOptions<K>,
 ): Promise<void> {
-  // Handle empty array
   if (values.length === 0) {
     return;
   }
@@ -157,15 +151,12 @@ export async function batchUpdate<
   const keyOption = (options?.key ?? 'id') as K | readonly K[];
   const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
 
-  // Process in batches
   for (let i = 0; i < values.length; i += batchSize) {
     const batch = values.slice(i, i + batchSize);
 
-    // Execute each update in the batch
     for (const record of batch) {
       const typedRecord = record as Record<string, unknown>;
 
-      // Validate all key fields are present
       for (const key of keys) {
         const keyValue = typedRecord[key];
         if (keyValue === undefined) {
@@ -173,16 +164,11 @@ export async function batchUpdate<
         }
       }
 
-      // Extract the keys from the update object
       const updateData = { ...typedRecord };
       for (const key of keys) {
         delete updateData[key];
       }
 
-      // Build query with WHERE clauses for all keys
-      // Note: Using `as any` here is necessary because Kysely's complex `ExtractTableAlias`
-      // types don't perfectly match our runtime-constructed updateData and key references.
-      // The function signature ensures user-facing type safety (K extends keyof DB[TB]).
       let query = executor.updateTable(table).set(updateData as any);
 
       for (const key of keys) {
