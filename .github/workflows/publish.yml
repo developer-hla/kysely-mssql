@@ -52,18 +52,3 @@ jobs:
         run: pnpm publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Add comment to GitHub Release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-            const version = packageJson.version;
-
-            await github.rest.repos.createReleaseComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: context.payload.release.id,
-              body: `Published version ${version} to npm: https://www.npmjs.com/package/@dev-hla/kysely-mssql/v/${version}`
-            });
