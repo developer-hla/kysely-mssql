@@ -1,6 +1,6 @@
 {
   "name": "@dev-hla/kysely-mssql",
-  "version": "0.1.3",
+  "version": "0.0.0",
   "description": "Opinionated Kysely wrapper for MS SQL Server with observability, error handling, and utilities",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
