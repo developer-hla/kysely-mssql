@@ -3,6 +3,17 @@ name: Publish to npm
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.1.5)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (skip actual publish)'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   publish:
@@ -16,11 +27,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version from release tag
+      - name: Extract version
         id: get_version
         run: |
-          # Remove 'v' prefix from tag (e.g., v0.1.4 -> 0.1.4)
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual trigger - use input version
+            VERSION="${{ inputs.version }}"
+          else
+            # Release trigger - extract from tag name
+            TAG_NAME="${{ github.event.release.tag_name }}"
+            VERSION=${TAG_NAME#v}
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
 
@@ -63,6 +80,15 @@ jobs:
           npm pack --dry-run
 
       - name: Publish to npm
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
         run: pnpm publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry run - Skip publish
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: |
+          echo "Dry run mode - skipping actual publish to npm"
+          echo "Would publish version ${{ steps.get_version.outputs.version }}"
+          pnpm pack
+          echo "Package created successfully"
