@@ -2,6 +2,21 @@ import type { Dialect, PluginTransformQueryArgs, PluginTransformResultArgs } fro
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryOriginPlugin, QueryOriginPlugin } from './query-origin.plugin.js';
 
+/**
+ * Interface for accessing private methods in QueryOriginPlugin for testing.
+ * This allows us to test implementation details while maintaining type safety.
+ */
+interface QueryOriginPluginPrivate {
+  captureCallerInfo(): {
+    file: string;
+    line: string;
+    column: string;
+    functionName: string;
+  } | null;
+  formatComment(info: { file: string; line: string; column: string; functionName: string }): string;
+  makeRelativePath(filePath: string): string;
+}
+
 describe('QueryOriginPlugin', () => {
   describe('constructor', () => {
     it('should create plugin with default project root', () => {
@@ -30,7 +45,7 @@ describe('QueryOriginPlugin', () => {
   describe('transformQuery', () => {
     it('should return node unchanged', () => {
       const plugin = new QueryOriginPlugin();
-      const mockNode = { kind: 'SelectQueryNode' } as any;
+      const mockNode = { kind: 'SelectQueryNode' as const };
       const args = { node: mockNode } as PluginTransformQueryArgs;
 
       const result = plugin.transformQuery(args);
@@ -42,8 +57,11 @@ describe('QueryOriginPlugin', () => {
   describe('transformResult', () => {
     it('should return result unchanged', async () => {
       const plugin = new QueryOriginPlugin();
-      const mockResult = { rows: [{ id: 1 }] } as any;
-      const args = { result: mockResult } as PluginTransformResultArgs;
+      const mockResult = { rows: [{ id: 1 }] };
+      const args = {
+        result: mockResult,
+        queryId: Symbol('test-query-id'),
+      } as unknown as PluginTransformResultArgs;
 
       const result = await plugin.transformResult(args);
 
@@ -88,7 +106,9 @@ describe('QueryOriginPlugin', () => {
       const plugin = new QueryOriginPlugin({ projectRoot: '/project' });
 
       // Access private method for testing
-      const captureCallerInfo = (plugin as any).captureCallerInfo.bind(plugin);
+      const captureCallerInfo = (
+        plugin as unknown as QueryOriginPluginPrivate
+      ).captureCallerInfo.bind(plugin);
 
       // We can't easily mock Error.stack in a reliable way across environments,
       // so we just verify the method exists and returns the expected type
@@ -109,7 +129,9 @@ describe('QueryOriginPlugin', () => {
       const plugin = new QueryOriginPlugin();
 
       // Access private method for testing
-      const formatComment = (plugin as any).formatComment.bind(plugin);
+      const formatComment = (plugin as unknown as QueryOriginPluginPrivate).formatComment.bind(
+        plugin,
+      );
 
       const result = formatComment({
         file: 'src/services/user.service.ts',
@@ -124,7 +146,9 @@ describe('QueryOriginPlugin', () => {
     it('should format comment with file:line for anonymous functions', () => {
       const plugin = new QueryOriginPlugin();
 
-      const formatComment = (plugin as any).formatComment.bind(plugin);
+      const formatComment = (plugin as unknown as QueryOriginPluginPrivate).formatComment.bind(
+        plugin,
+      );
 
       const result = formatComment({
         file: 'src/services/user.service.ts',
@@ -139,7 +163,9 @@ describe('QueryOriginPlugin', () => {
     it('should prefer function name over file:line', () => {
       const plugin = new QueryOriginPlugin();
 
-      const formatComment = (plugin as any).formatComment.bind(plugin);
+      const formatComment = (plugin as unknown as QueryOriginPluginPrivate).formatComment.bind(
+        plugin,
+      );
 
       const result = formatComment({
         file: 'src/test.ts',
@@ -156,7 +182,9 @@ describe('QueryOriginPlugin', () => {
     it('should make path relative to project root', () => {
       const plugin = new QueryOriginPlugin({ projectRoot: '/project' });
 
-      const makeRelativePath = (plugin as any).makeRelativePath.bind(plugin);
+      const makeRelativePath = (
+        plugin as unknown as QueryOriginPluginPrivate
+      ).makeRelativePath.bind(plugin);
 
       const result = makeRelativePath('/project/src/services/user.service.ts');
 
@@ -166,7 +194,9 @@ describe('QueryOriginPlugin', () => {
     it('should use basename for paths outside project root', () => {
       const plugin = new QueryOriginPlugin({ projectRoot: '/project' });
 
-      const makeRelativePath = (plugin as any).makeRelativePath.bind(plugin);
+      const makeRelativePath = (
+        plugin as unknown as QueryOriginPluginPrivate
+      ).makeRelativePath.bind(plugin);
 
       const result = makeRelativePath('/other/path/file.ts');
 
@@ -176,7 +206,9 @@ describe('QueryOriginPlugin', () => {
     it('should handle project root path exactly', () => {
       const plugin = new QueryOriginPlugin({ projectRoot: '/project' });
 
-      const makeRelativePath = (plugin as any).makeRelativePath.bind(plugin);
+      const makeRelativePath = (
+        plugin as unknown as QueryOriginPluginPrivate
+      ).makeRelativePath.bind(plugin);
 
       const result = makeRelativePath('/project/index.ts');
 

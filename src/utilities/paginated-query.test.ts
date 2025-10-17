@@ -1,5 +1,6 @@
 import type { SelectQueryBuilder } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
+import type { MinimalTestDatabase } from '../test-utils/index.js';
 import { paginateQuery } from './paginated-query.js';
 
 describe('paginateQuery', () => {
@@ -20,7 +21,7 @@ describe('paginateQuery', () => {
       execute: vi.fn().mockResolvedValue(dataResult),
     };
 
-    return mockQuery as unknown as SelectQueryBuilder<any, any, T>;
+    return mockQuery as unknown as SelectQueryBuilder<MinimalTestDatabase, 'users' | 'posts', T>;
   }
 
   describe('default parameters', () => {
@@ -137,7 +138,7 @@ describe('paginateQuery', () => {
     });
 
     it('should convert string count to number', async () => {
-      const mockQuery = createMockQuery('200' as any, []);
+      const mockQuery = createMockQuery('200' as unknown as number, []);
 
       const result = await paginateQuery(mockQuery, { page: 1, limit: 50 });
 

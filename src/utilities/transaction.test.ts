@@ -120,8 +120,8 @@ describe('wrapInTransaction', () => {
 
   describe('callback execution', () => {
     it('should pass transaction to callback', async () => {
-      const mockTransaction = { id: 'tx-123' } as any;
-      let capturedTransaction: any;
+      const mockTransaction = createMockTransaction();
+      let capturedTransaction: ReturnType<typeof createMockTransaction> | undefined;
 
       const mockCallback = vi.fn().mockImplementation((tx) => {
         capturedTransaction = tx;
