@@ -36,6 +36,7 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`wrapInTransaction`**: Composable transaction helper for building transactional functions
 - **`addQueryHint`**: Add SQL Server query hints (RECOMPILE, MAXDOP, etc.) to optimize queries
 - **`crossDbTable`**: Type-safe cross-database joins with automatic schema handling
+- **`deduplicateJoins`**: Automatically remove duplicate joins from dynamic queries
 
 ### Smart Logging
 Configurable logging with query and error levels. Integrate with your logging framework (pino, winston, etc.).
@@ -461,6 +462,92 @@ crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>('ArchiveDB', 'histor
 - Automatic schema handling (defaults to 'dbo')
 - Proper SQL identifier escaping
 
+### 8. Deduplicate Joins
+
+Prevent duplicate join errors in dynamically constructed queries:
+
+```typescript
+import { deduplicateJoins } from '@hunter-ashmore/kysely-mssql';
+
+// Problem: Dynamic queries can add duplicate joins
+let query = db.selectFrom('plots');
+
+if (includeRegion) {
+  query = query.leftJoin('regions', 'regions.code', 'plots.regionCode');
+}
+
+if (searchTerm) {
+  // Oops! This might also add the regions join
+  query = query
+    .leftJoin('regions', 'regions.code', 'plots.regionCode')
+    .where('regions.name', 'like', `%${searchTerm}%`);
+}
+
+// Without deduplication: Database error if both conditions are true!
+
+// Solution: Apply deduplicateJoins at the start
+let query = db
+  .selectFrom('plots')
+  .$call(deduplicateJoins); // Automatically removes duplicate joins
+
+if (includeRegion) {
+  query = query.leftJoin('regions', 'regions.code', 'plots.regionCode');
+}
+
+if (searchTerm) {
+  query = query
+    .leftJoin('regions', 'regions.code', 'plots.regionCode') // Duplicate safely removed
+    .where('regions.name', 'like', `%${searchTerm}%`);
+}
+
+const results = await query.selectAll().execute(); // Works!
+```
+
+**Usage Patterns:**
+
+```typescript
+// Pattern 1: Using $call (recommended)
+const query = db
+  .selectFrom('users')
+  .$call(deduplicateJoins)
+  .leftJoin('posts', 'posts.userId', 'users.id')
+  .selectAll();
+
+// Pattern 2: Functional style
+const query = deduplicateJoins(
+  db
+    .selectFrom('users')
+    .leftJoin('posts', 'posts.userId', 'users.id')
+);
+
+// Pattern 3: With complex query building
+function buildPlotQuery(filters: PlotFilters) {
+  let query = db
+    .selectFrom('plots')
+    .$call(deduplicateJoins); // Apply once at the start
+
+  if (filters.includeCooperator) {
+    query = query.leftJoin('cooperators', 'cooperators.id', 'plots.cooperatorId');
+  }
+
+  if (filters.searchTerm) {
+    // Might conditionally add same joins based on search context
+    query = addSearchFilters(query, filters.searchTerm);
+  }
+
+  return query;
+}
+```
+
+**When to Use:**
+- Building queries with conditional joins
+- Search functionality that dynamically adds joins
+- Complex filtering with multiple optional join conditions
+- Any scenario where the same join might be added more than once
+
+**Behind the Scenes:**
+This is a convenience wrapper around Kysely's built-in `DeduplicateJoinsPlugin`. It's applied locally to specific queries rather than globally to avoid edge cases with complex subqueries.
+
 ---
 
 ## Comparison with Plain Kysely
@@ -511,6 +598,7 @@ const db = new Kysely<Database>({ dialect });
 // - No transaction composition helper
 // - No query hints helper
 // - No cross-database join helper
+// - No deduplicate joins helper
 ```
 
 ### With This Package
@@ -536,6 +624,7 @@ const db = createConnection<Database>({
 // - Transaction composition helper included
 // - Query hints helper included
 // - Cross-database join helper included
+// - Deduplicate joins helper included
 // - Sensible defaults for everything
 ```
 
@@ -672,6 +761,31 @@ const results = await db
   )
   .selectAll()
   .execute();
+```
+
+### `deduplicateJoins<DB, TB, O>(query): SelectQueryBuilder<DB, TB, O>`
+
+Apply deduplication to prevent duplicate join errors in dynamic queries.
+
+**Parameters:**
+- `query: SelectQueryBuilder<DB, TB, O>` - The Kysely SELECT query to deduplicate
+
+**Returns:** The same query with `DeduplicateJoinsPlugin` applied
+
+**Example:**
+```typescript
+// Using $call (recommended)
+const query = db
+  .selectFrom('plots')
+  .$call(deduplicateJoins)
+  .leftJoin('regions', 'regions.code', 'plots.regionCode')
+  .leftJoin('regions', 'regions.code', 'plots.regionCode') // Duplicate removed
+  .selectAll();
+
+// Functional style
+const query = deduplicateJoins(
+  db.selectFrom('users').leftJoin('posts', 'posts.userId', 'users.id')
+);
 ```
 
 ---

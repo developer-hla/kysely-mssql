@@ -71,6 +71,7 @@ export {
   addQueryHint,
   callStoredProcedure,
   crossDbTable,
+  deduplicateJoins,
   type PaginationMetadata,
   type PaginationParams,
   type PaginationResult,

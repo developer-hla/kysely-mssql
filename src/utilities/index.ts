@@ -3,6 +3,7 @@
  */
 
 export { crossDbTable } from './cross-database.js';
+export { deduplicateJoins } from './deduplicate-joins.js';
 export {
   type PaginationMetadata,
   type PaginationParams,

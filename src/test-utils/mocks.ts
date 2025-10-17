@@ -68,7 +68,7 @@ export function createMockTransaction<DB>(): Transaction<DB> {
 export function createMockSelectQuery<DB, TB extends keyof DB & string, O>(
   overrides?: Partial<SelectQueryBuilder<DB, TB, O>>,
 ): SelectQueryBuilder<DB, TB, O> {
-  const mockQuery = {
+  const mockQuery: any = {
     // Selection methods
     select: vi.fn().mockReturnThis(),
     selectAll: vi.fn().mockReturnThis(),
@@ -102,6 +102,9 @@ export function createMockSelectQuery<DB, TB extends keyof DB & string, O>(
     modifyEnd: vi.fn().mockReturnThis(),
     modifyFront: vi.fn().mockReturnThis(),
     $call: vi.fn((fn) => fn(mockQuery)),
+
+    // Plugin methods
+    withPlugin: vi.fn().mockReturnThis(),
 
     // Execution methods
     execute: vi.fn().mockResolvedValue([]),
