@@ -1,7 +1,7 @@
 import type { Dialect } from 'kysely';
 import { Kysely, MssqlDialect } from 'kysely';
 import tarn from 'tarn';
-import tedious from 'tedious';
+import * as tedious from 'tedious';
 
 import { createLogger } from '../logging/index.js';
 import { createQueryOriginPlugin } from '../plugins/index.js';

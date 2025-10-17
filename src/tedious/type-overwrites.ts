@@ -1,4 +1,4 @@
-import tedious from 'tedious';
+import * as tedious from 'tedious';
 
 /**
  * Tedious type overwrites for SQL Server performance optimization.
