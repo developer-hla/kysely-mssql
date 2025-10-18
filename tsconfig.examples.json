@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig-base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist/examples",
+    "rootDir": ".",
+    "noEmit": true,
+    "paths": {
+      "@dev-hla/kysely-mssql": ["./src/index.ts"]
+    }
+  },
+  "include": ["examples/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

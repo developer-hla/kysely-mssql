@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { DuplicateKeyError, ForeignKeyError } from '@hunter-ashmore/kysely-mssql';
+ * import { DuplicateKeyError, ForeignKeyError } from '@dev-hla/kysely-mssql';
  *
  * try {
  *   await db.insertInto('users').values({...}).execute();

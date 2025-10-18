@@ -1,5 +1,5 @@
 /**
- * @hunter-ashmore/kysely-mssql
+ * @dev-hla/kysely-mssql
  *
  * Opinionated Kysely wrapper for MS SQL Server with built-in observability,
  * error handling, and utilities.
@@ -15,7 +15,7 @@
  * @example
  * Basic usage:
  * ```typescript
- * import { createConnection } from '@hunter-ashmore/kysely-mssql';
+ * import { createConnection } from '@dev-hla/kysely-mssql';
  *
  * const db = createConnection<Database>({
  *   server: 'localhost',

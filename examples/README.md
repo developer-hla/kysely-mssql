@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains comprehensive examples demonstrating all features of `@hunter-ashmore/kysely-mssql`.
+This directory contains comprehensive examples demonstrating all features of `@dev-hla/kysely-mssql`.
 
 ## Running Examples
 

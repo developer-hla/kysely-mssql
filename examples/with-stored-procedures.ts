@@ -4,7 +4,7 @@
  * Demonstrates executing SQL Server stored procedures with typed parameters.
  */
 
-import { callStoredProcedure, createConnection } from '@hunter-ashmore/kysely-mssql';
+import { callStoredProcedure, createConnection } from '@dev-hla/kysely-mssql';
 
 interface Database {
   users: {
@@ -26,7 +26,7 @@ const db = createConnection<Database>({
 
 // ===== EXAMPLE 1: BASIC STORED PROCEDURE =====
 
-interface UserResult {
+interface UserResult extends Record<string, unknown> {
   id: number;
   name: string;
   email: string;
@@ -43,7 +43,7 @@ async function example1_BasicStoredProcedure() {
 
 // ===== EXAMPLE 2: MULTIPLE PARAMETERS =====
 
-interface SalaryRangeResult {
+interface SalaryRangeResult extends Record<string, unknown> {
   id: number;
   name: string;
   department: string;

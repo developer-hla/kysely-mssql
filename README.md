@@ -1,4 +1,4 @@
-# @hunter-ashmore/kysely-mssql
+# @dev-hla/kysely-mssql
 
 > Opinionated Kysely wrapper for MS SQL Server with built-in observability, error handling, and utilities.
 
@@ -49,11 +49,11 @@ Configurable logging with query and error levels. Integrate with your logging fr
 ## Installation
 
 ```bash
-npm install @hunter-ashmore/kysely-mssql kysely tedious tarn
+npm install @dev-hla/kysely-mssql kysely tedious tarn
 # or
-pnpm add @hunter-ashmore/kysely-mssql kysely tedious tarn
+pnpm add @dev-hla/kysely-mssql kysely tedious tarn
 # or
-yarn add @hunter-ashmore/kysely-mssql kysely tedious tarn
+yarn add @dev-hla/kysely-mssql kysely tedious tarn
 ```
 
 **Peer Dependencies** (required):
@@ -68,7 +68,7 @@ yarn add @hunter-ashmore/kysely-mssql kysely tedious tarn
 ### Basic Connection
 
 ```typescript
-import { createConnection } from '@hunter-ashmore/kysely-mssql';
+import { createConnection } from '@dev-hla/kysely-mssql';
 
 // Define your database schema
 interface Database {
@@ -187,7 +187,7 @@ import {
   DuplicateKeyError,
   ForeignKeyError,
   DatabaseError,
-} from '@hunter-ashmore/kysely-mssql';
+} from '@dev-hla/kysely-mssql';
 
 async function createUser(email: string, name: string) {
   try {
@@ -233,7 +233,7 @@ async function createUser(email: string, name: string) {
 Type-safe pagination with metadata:
 
 ```typescript
-import { paginateQuery } from '@hunter-ashmore/kysely-mssql';
+import { paginateQuery } from '@dev-hla/kysely-mssql';
 
 async function getUsers(page: number, limit: number) {
   const query = db
@@ -263,7 +263,7 @@ async function getUsers(page: number, limit: number) {
 Execute stored procedures with typed parameters:
 
 ```typescript
-import { callStoredProcedure } from '@hunter-ashmore/kysely-mssql';
+import { callStoredProcedure } from '@dev-hla/kysely-mssql';
 
 interface ProductResult {
   ProductID: number;
@@ -290,7 +290,7 @@ const products = await callStoredProcedure<ProductResult>(
 Build composable transactional functions:
 
 ```typescript
-import { wrapInTransaction, type Transaction } from '@hunter-ashmore/kysely-mssql';
+import { wrapInTransaction, type Transaction } from '@dev-hla/kysely-mssql';
 
 // Functions can work standalone OR participate in larger transactions
 async function createUser(
@@ -342,7 +342,7 @@ await db.transaction().execute(async (tx) => {
 Add SQL Server query hints to optimize query execution:
 
 ```typescript
-import { addQueryHint } from '@hunter-ashmore/kysely-mssql';
+import { addQueryHint } from '@dev-hla/kysely-mssql';
 
 // Force query recompilation (helps with parameter sniffing issues)
 const users = await db
@@ -397,7 +397,7 @@ const complexQuery = await db
 Perform type-safe joins across databases on the same SQL Server instance:
 
 ```typescript
-import { crossDbTable } from '@hunter-ashmore/kysely-mssql';
+import { crossDbTable } from '@dev-hla/kysely-mssql';
 
 // Define your database schemas
 interface MainDB {
@@ -470,7 +470,7 @@ crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>('ArchiveDB', 'histor
 Prevent duplicate join errors in dynamically constructed queries:
 
 ```typescript
-import { deduplicateJoins } from '@hunter-ashmore/kysely-mssql';
+import { deduplicateJoins } from '@dev-hla/kysely-mssql';
 
 // Problem: Dynamic queries can add duplicate joins
 let query = db.selectFrom('plots');
@@ -556,7 +556,7 @@ This is a convenience wrapper around Kysely's built-in `DeduplicateJoinsPlugin`.
 Build multi-column search filters with automatic wildcard escaping:
 
 ```typescript
-import { buildSearchFilter } from '@hunter-ashmore/kysely-mssql';
+import { buildSearchFilter } from '@dev-hla/kysely-mssql';
 
 // Basic search across multiple columns
 const results = await db
@@ -624,7 +624,7 @@ const result = await paginateQuery(query, { page: 1, limit: 20 });
 Insert large datasets efficiently in batches to avoid SQL Server parameter limits:
 
 ```typescript
-import { batchInsert } from '@hunter-ashmore/kysely-mssql';
+import { batchInsert } from '@dev-hla/kysely-mssql';
 
 // Basic usage: insert 10,000 products in batches
 const products = Array.from({ length: 10000 }, (_, i) => ({
@@ -694,7 +694,7 @@ await batchInsert(db, 'products', largeArray, { batchSize: 500 }); // Success!
 Update large datasets efficiently in batches:
 
 ```typescript
-import { batchUpdate } from '@hunter-ashmore/kysely-mssql';
+import { batchUpdate } from '@dev-hla/kysely-mssql';
 
 // Basic usage: update 5,000 product prices
 const updates = [
@@ -823,7 +823,7 @@ const db = new Kysely<Database>({ dialect });
 ### With This Package
 
 ```typescript
-import { createConnection } from '@hunter-ashmore/kysely-mssql';
+import { createConnection } from '@dev-hla/kysely-mssql';
 
 const db = createConnection<Database>({
   server: 'localhost',
@@ -1193,7 +1193,7 @@ const db = new Kysely<Database>({ dialect });
 
 **After:**
 ```typescript
-import { createConnection } from '@hunter-ashmore/kysely-mssql';
+import { createConnection } from '@dev-hla/kysely-mssql';
 
 const db = createConnection<Database>({
   server: 'localhost',
@@ -1220,7 +1220,7 @@ export const database = new Kysely<Database>({ dialect });
 
 **After:**
 ```typescript
-import { createConnection } from '@hunter-ashmore/kysely-mssql';
+import { createConnection } from '@dev-hla/kysely-mssql';
 
 export const database = createConnection<Database>({
   server: process.env.DB_SERVER!,
@@ -1255,7 +1255,7 @@ pnpm build
 pnpm link --global
 
 # In your project
-pnpm link --global @hunter-ashmore/kysely-mssql
+pnpm link --global @dev-hla/kysely-mssql
 ```
 
 ---

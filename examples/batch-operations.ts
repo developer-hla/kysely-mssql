@@ -5,16 +5,12 @@
  * Automatically handles SQL Server parameter limits.
  */
 
-import {
-  batchInsert,
-  batchUpdate,
-  batchUpsert,
-  createConnection,
-} from '@hunter-ashmore/kysely-mssql';
+import { batchInsert, batchUpdate, batchUpsert, createConnection } from '@dev-hla/kysely-mssql';
+import type { Generated } from 'kysely';
 
 interface Database {
   products: {
-    id: number;
+    id: Generated<number>;
     sku: string;
     name: string;
     price: number;
@@ -28,7 +24,7 @@ interface Database {
     updated_at: Date;
   };
   users: {
-    id: number;
+    id: Generated<number>;
     name: string;
     email: string;
   };

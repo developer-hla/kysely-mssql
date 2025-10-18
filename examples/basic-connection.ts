@@ -1,11 +1,11 @@
 /**
  * Basic Connection Example
  *
- * This example shows the simplest possible usage of @hunter-ashmore/kysely-mssql.
+ * This example shows the simplest possible usage of @dev-hla/kysely-mssql.
  * Just define your schema and call createConnection() with minimal configuration.
  */
 
-import { createConnection } from '@hunter-ashmore/kysely-mssql';
+import { createConnection } from '@dev-hla/kysely-mssql';
 
 // 1. Define your database schema
 interface Database {

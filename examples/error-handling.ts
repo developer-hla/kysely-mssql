@@ -14,17 +14,18 @@ import {
   ForeignKeyError,
   RequiredFieldError,
   TransactionDeadlockError,
-} from '@hunter-ashmore/kysely-mssql';
+} from '@dev-hla/kysely-mssql';
+import type { Generated } from 'kysely';
 
 interface Database {
   users: {
-    id: number;
+    id: Generated<number>;
     email: string; // UNIQUE constraint
     name: string; // NOT NULL constraint
     bio: string; // VARCHAR(255) - can truncate
   };
   posts: {
-    id: number;
+    id: Generated<number>;
     user_id: number; // FOREIGN KEY to users(id)
     title: string;
     content: string;

@@ -5,7 +5,7 @@
  * type-safe paginated queries with comprehensive metadata.
  */
 
-import { buildSearchFilter, createConnection, paginateQuery } from '@hunter-ashmore/kysely-mssql';
+import { buildSearchFilter, createConnection, paginateQuery } from '@dev-hla/kysely-mssql';
 
 interface Database {
   users: {
@@ -76,7 +76,7 @@ async function example3_PaginationWithSearch() {
     .selectFrom('posts')
     .innerJoin('users', 'users.id', 'posts.user_id')
     .select(['posts.id', 'posts.title', 'posts.content', 'users.name as author_name'])
-    .where(buildSearchFilter(['posts.title', 'posts.content'], searchTerm))
+    .where(buildSearchFilter<Database, 'posts'>(['posts.title', 'posts.content'], searchTerm))
     .orderBy('posts.created_at', 'desc');
 
   const result = await paginateQuery(query, { page: 1, limit: 10 });

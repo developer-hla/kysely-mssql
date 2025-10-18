@@ -5,7 +5,7 @@
  * query hints, cross-database queries, and duplicate join prevention.
  */
 
-import { addQueryHint, createConnection, deduplicateJoins } from '@hunter-ashmore/kysely-mssql';
+import { addQueryHint, createConnection, deduplicateJoins } from '@dev-hla/kysely-mssql';
 
 interface MainDatabase {
   users: {
@@ -105,38 +105,19 @@ async function example3_MultipleHints() {
 
 // Prevent duplicate joins when building queries dynamically
 async function example4_DeduplicateJoins() {
-  const includeRegion = true;
-  const filterByCountry = true;
-  const searchTerm = 'Plot';
-
-  // Start with base query
-  let query = db.selectFrom('plots').$call(deduplicateJoins);
-
-  // Conditionally add joins (might add same join multiple times)
-  if (includeRegion) {
-    query = query.leftJoin('regions', 'regions.code', 'plots.region_code');
-  }
-
-  if (filterByCountry) {
-    query = query
-      .leftJoin('regions', 'regions.code', 'plots.region_code') // Duplicate!
-      .where('regions.country', '=', 'USA');
-  }
-
-  if (searchTerm) {
-    query = query
-      .leftJoin('regions', 'regions.code', 'plots.region_code') // Duplicate!
-      .where('regions.name', 'like', `%${searchTerm}%`);
-  }
-
-  query = query.select([
-    'plots.id',
-    'plots.name',
-    'regions.name as region_name',
-    'regions.country',
-  ]);
-
-  const results = await query.execute();
+  // deduplicateJoins() removes duplicate join clauses automatically.
+  // This is useful when building complex queries with multiple conditional branches
+  // that might add the same join more than once.
+  const results = await db
+    .selectFrom('plots')
+    .$call(deduplicateJoins)
+    .leftJoin('regions', 'regions.code', 'plots.region_code')
+    .leftJoin('regions', 'regions.code', 'plots.region_code') // Duplicate - removed
+    .where('regions.country', '=', 'USA')
+    .leftJoin('regions', 'regions.code', 'plots.region_code') // Another duplicate - removed
+    .where('regions.name', 'like', '%Plot%')
+    .select(['plots.id', 'plots.name', 'regions.name as region_name', 'regions.country'])
+    .execute();
 
   console.log(`✓ Found ${results.length} plots (duplicate joins removed automatically)`);
 }

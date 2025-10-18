@@ -33,6 +33,14 @@ export interface SearchFilterOptions {
 }
 
 /**
+ * Type helper for column references that supports both qualified and unqualified column names.
+ * Enables type-safe column references in both single-table and joined queries.
+ */
+type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
+  ? (keyof DB[TB] & string) | `${TB}.${keyof DB[TB] & string}`
+  : never;
+
+/**
  * Builds a search filter that performs LIKE searches across multiple columns with OR logic.
  *
  * Automatically escapes special LIKE pattern characters (%, _, [, ]) in the search term
@@ -103,9 +111,21 @@ export interface SearchFilterOptions {
  *   .selectAll()
  *   .execute();
  * ```
+ *
+ * @example
+ * With joined tables (use qualified column names):
+ * ```typescript
+ * const results = await db
+ *   .selectFrom('posts')
+ *   .innerJoin('users', 'users.id', 'posts.user_id')
+ *   .where(buildSearchFilter(['posts.title', 'posts.content'], searchTerm))
+ *   .selectAll()
+ *   .execute();
+ * // SQL: WHERE (posts.title LIKE '%term%' OR posts.content LIKE '%term%')
+ * ```
  */
 export function buildSearchFilter<DB, TB extends keyof DB & string>(
-  columns: readonly (keyof DB[TB] & string)[],
+  columns: readonly ColumnReference<DB, TB>[],
   searchTerm: string,
   options?: SearchFilterOptions,
 ) {

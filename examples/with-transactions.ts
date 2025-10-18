@@ -5,15 +5,12 @@
  * OR participate in larger transactions.
  */
 
-import {
-  createConnection,
-  type Transaction,
-  wrapInTransaction,
-} from '@hunter-ashmore/kysely-mssql';
+import { createConnection, type Transaction, wrapInTransaction } from '@dev-hla/kysely-mssql';
+import type { Generated } from 'kysely';
 
 interface Database {
   users: {
-    id: number;
+    id: Generated<number>;
     name: string;
     email: string;
     balance: number;
@@ -24,14 +21,14 @@ interface Database {
     avatar_url: string | null;
   };
   transactions: {
-    id: number;
+    id: Generated<number>;
     from_user_id: number;
     to_user_id: number;
     amount: number;
     created_at: Date;
   };
   audit_logs: {
-    id: number;
+    id: Generated<number>;
     entity_type: string;
     entity_id: number;
     action: string;
