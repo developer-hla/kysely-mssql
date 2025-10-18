@@ -4,99 +4,118 @@ import { buildSearchFilter } from './search-filter.js';
 
 describe('buildSearchFilter', () => {
   describe('basic functionality', () => {
-    it('should create a filter for single column', () => {
-      const filter = buildSearchFilter(['name'], 'John');
+    it('should work with where clause for single column', () => {
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'John'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
-    it('should create a filter for multiple columns', () => {
-      const filter = buildSearchFilter(['title', 'content'], 'typescript');
+    it('should work with where clause for multiple columns', () => {
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title', 'content'], 'typescript'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should work with where clause', () => {
       const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      mockQuery.where(buildSearchFilter(['title', 'content'], 'search term'));
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title', 'content'], 'search term'));
 
       expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('search modes', () => {
-    it('should default to contains mode', () => {
-      const filter = buildSearchFilter(['name'], 'test');
+    it('should work with default contains mode', () => {
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'test'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should support startsWith mode', () => {
-      const filter = buildSearchFilter(['name'], 'John', { mode: 'startsWith' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'John', { mode: 'startsWith' }));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should support endsWith mode', () => {
-      const filter = buildSearchFilter(['email'], '@gmail.com', { mode: 'endsWith' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['email'], '@gmail.com', { mode: 'endsWith' }));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should support contains mode explicitly', () => {
-      const filter = buildSearchFilter(['title'], 'middle', { mode: 'contains' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title'], 'middle', { mode: 'contains' }));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('special character escaping', () => {
     it('should handle percent sign in search term', () => {
-      const filter = buildSearchFilter(['title'], '50% off');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title'], '50% off'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should handle underscore in search term', () => {
-      const filter = buildSearchFilter(['name'], 'first_name');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'first_name'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should handle square brackets in search term', () => {
-      const filter = buildSearchFilter(['content'], 'array[0]');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['content'], 'array[0]'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
 
     it('should handle multiple special characters', () => {
-      const filter = buildSearchFilter(['title'], '50%_discount[2024]');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title'], '50%_discount[2024]'));
+
+      expect(mockQuery.where).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('type preservation', () => {
     it('should work with different table types', () => {
-      const usersFilter = buildSearchFilter<MinimalTestDatabase, 'users'>(
-        ['name', 'email'],
-        'test',
-      );
-      const postsFilter = buildSearchFilter<MinimalTestDatabase, 'posts'>(
-        ['title', 'content'],
-        'test',
-      );
+      const usersQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
+      const postsQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(usersFilter).toBeTypeOf('function');
-      expect(postsFilter).toBeTypeOf('function');
+      usersQuery.where((eb) => buildSearchFilter(eb, ['name', 'email'], 'test'));
+      postsQuery.where((eb) => buildSearchFilter(eb, ['title', 'content'], 'test'));
+
+      expect(usersQuery.where).toHaveBeenCalled();
+      expect(postsQuery.where).toHaveBeenCalled();
     });
 
     it('should maintain type safety with column names', () => {
-      // This should compile - valid columns
-      const filter = buildSearchFilter<MinimalTestDatabase, 'users'>(['name', 'email'], 'test');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      // This should compile - valid columns
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name', 'email'], 'test'));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
   });
 
@@ -106,7 +125,7 @@ describe('buildSearchFilter', () => {
 
       mockQuery
         .where('status', '=', 'published')
-        .where(buildSearchFilter(['title', 'content'], 'typescript'))
+        .where((eb) => buildSearchFilter(eb, ['title', 'content'], 'typescript'))
         .selectAll();
 
       expect(mockQuery.where).toHaveBeenCalledTimes(2);
@@ -118,7 +137,7 @@ describe('buildSearchFilter', () => {
 
       mockQuery
         .select('id')
-        .where(buildSearchFilter(['title'], 'search'))
+        .where((eb) => buildSearchFilter(eb, ['title'], 'search'))
         .orderBy('id');
 
       expect(mockQuery.select).toHaveBeenCalledWith('id');
@@ -134,7 +153,7 @@ describe('buildSearchFilter', () => {
 
       const searchTerm = 'typescript';
       if (searchTerm) {
-        query = query.where(buildSearchFilter(['title', 'content'], searchTerm));
+        query = query.where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm));
       }
 
       expect(mockQuery.where).toHaveBeenCalled();
@@ -146,7 +165,7 @@ describe('buildSearchFilter', () => {
 
       const searchTerm = '';
       if (searchTerm) {
-        query = query.where(buildSearchFilter(['title', 'content'], searchTerm));
+        query = query.where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm));
       }
 
       expect(mockQuery.where).not.toHaveBeenCalled();
@@ -159,7 +178,7 @@ describe('buildSearchFilter', () => {
 
       mockQuery
         .where('status', '=', 'published')
-        .where(buildSearchFilter(['title', 'content'], 'typescript'))
+        .where((eb) => buildSearchFilter(eb, ['title', 'content'], 'typescript'))
         .where('viewCount', '>', 100);
 
       expect(mockQuery.where).toHaveBeenCalledTimes(3);
@@ -169,8 +188,8 @@ describe('buildSearchFilter', () => {
       const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
       mockQuery
-        .where(buildSearchFilter(['title'], 'typescript'))
-        .where(buildSearchFilter(['content'], 'tutorial'));
+        .where((eb) => buildSearchFilter(eb, ['title'], 'typescript'))
+        .where((eb) => buildSearchFilter(eb, ['content'], 'tutorial'));
 
       expect(mockQuery.where).toHaveBeenCalledTimes(2);
     });
@@ -178,35 +197,45 @@ describe('buildSearchFilter', () => {
 
   describe('edge cases', () => {
     it('should handle empty string search term', () => {
-      const filter = buildSearchFilter(['name'], '');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
       // Should not throw, but caller should decide whether to use it
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], ''));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should handle single character search', () => {
-      const filter = buildSearchFilter(['name'], 'A');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'A'));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should handle long search terms', () => {
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
       const longTerm = 'This is a very long search term that might be used in practice';
-      const filter = buildSearchFilter(['content'], longTerm);
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['content'], longTerm));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should handle single column array', () => {
-      const filter = buildSearchFilter(['name'], 'test');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], 'test'));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should handle many columns', () => {
-      const filter = buildSearchFilter<MinimalTestDatabase, 'users'>(['name', 'email'], 'search');
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name', 'email'], 'search'));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
   });
 
@@ -217,7 +246,7 @@ describe('buildSearchFilter', () => {
       mockQuery
         .select('id')
         .innerJoin('users', 'users.id', 'posts.userId')
-        .where(buildSearchFilter(['title', 'content'], 'test'))
+        .where((eb) => buildSearchFilter(eb, ['title', 'content'], 'test'))
         .orderBy('id');
 
       expect(mockQuery.select).toHaveBeenCalled();
@@ -229,21 +258,29 @@ describe('buildSearchFilter', () => {
 
   describe('search modes with special characters', () => {
     it('should escape special chars in startsWith mode', () => {
-      const filter = buildSearchFilter(['name'], '50%', { mode: 'startsWith' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'users', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['name'], '50%', { mode: 'startsWith' }));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should escape special chars in endsWith mode', () => {
-      const filter = buildSearchFilter(['title'], '[test]', { mode: 'endsWith' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) => buildSearchFilter(eb, ['title'], '[test]', { mode: 'endsWith' }));
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
 
     it('should escape special chars in contains mode', () => {
-      const filter = buildSearchFilter(['content'], 'test_value', { mode: 'contains' });
+      const mockQuery = createMockSelectQuery<MinimalTestDatabase, 'posts', any>();
 
-      expect(filter).toBeTypeOf('function');
+      mockQuery.where((eb) =>
+        buildSearchFilter(eb, ['content'], 'test_value', { mode: 'contains' }),
+      );
+
+      expect(mockQuery.where).toHaveBeenCalled();
     });
   });
 });

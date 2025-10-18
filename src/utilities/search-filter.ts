@@ -56,7 +56,7 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * ```typescript
  * const results = await db
  *   .selectFrom('posts')
- *   .where(buildSearchFilter(['title', 'content'], 'typescript'))
+ *   .where((eb) => buildSearchFilter(eb, ['title', 'content'], 'typescript'))
  *   .selectAll()
  *   .execute();
  * // SQL: WHERE (title LIKE '%typescript%' OR content LIKE '%typescript%')
@@ -66,11 +66,11 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * With different search modes:
  * ```typescript
  * // Starts with
- * .where(buildSearchFilter(['name'], 'John', { mode: 'startsWith' }))
+ * .where((eb) => buildSearchFilter(eb, ['name'], 'John', { mode: 'startsWith' }))
  * // SQL: WHERE name LIKE 'John%'
  *
  * // Ends with
- * .where(buildSearchFilter(['email'], '@gmail.com', { mode: 'endsWith' }))
+ * .where((eb) => buildSearchFilter(eb, ['email'], '@gmail.com', { mode: 'endsWith' }))
  * // SQL: WHERE email LIKE '%@gmail.com'
  * ```
  *
@@ -80,8 +80,8 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * let query = db.selectFrom('products').selectAll();
  *
  * if (searchTerm) {
- *   query = query.where(
- *     buildSearchFilter(['name', 'description', 'sku'], searchTerm)
+ *   query = query.where((eb) =>
+ *     buildSearchFilter(eb, ['name', 'description', 'sku'], searchTerm)
  *   );
  * }
  *
@@ -93,7 +93,7 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * ```typescript
  * const query = db
  *   .selectFrom('posts')
- *   .where(buildSearchFilter(['title', 'content'], searchTerm))
+ *   .where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm))
  *   .selectAll()
  *   .orderBy('created_at', 'desc');
  *
@@ -106,7 +106,7 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * const results = await db
  *   .selectFrom('posts')
  *   .where('status', '=', 'published')
- *   .where(buildSearchFilter(['title', 'content'], searchTerm))
+ *   .where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm))
  *   .where('created_at', '>', new Date('2024-01-01'))
  *   .selectAll()
  *   .execute();
@@ -118,28 +118,27 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * const results = await db
  *   .selectFrom('posts')
  *   .innerJoin('users', 'users.id', 'posts.user_id')
- *   .where(buildSearchFilter(['posts.title', 'posts.content'], searchTerm))
+ *   .where((eb) => buildSearchFilter(eb, ['posts.title', 'posts.content'], searchTerm))
  *   .selectAll()
  *   .execute();
  * // SQL: WHERE (posts.title LIKE '%term%' OR posts.content LIKE '%term%')
  * ```
  */
 export function buildSearchFilter<DB, TB extends keyof DB & string>(
+  eb: ExpressionBuilder<DB, TB>,
   columns: readonly ColumnReference<DB, TB>[],
   searchTerm: string,
   options?: SearchFilterOptions,
 ) {
-  return (eb: ExpressionBuilder<DB, TB>) => {
-    const mode = options?.mode ?? 'contains';
-    const escapedTerm = escapeLikePattern(searchTerm);
-    const pattern =
-      mode === 'startsWith'
-        ? `${escapedTerm}%`
-        : mode === 'endsWith'
-          ? `%${escapedTerm}`
-          : `%${escapedTerm}%`;
+  const mode = options?.mode ?? 'contains';
+  const escapedTerm = escapeLikePattern(searchTerm);
+  const pattern =
+    mode === 'startsWith'
+      ? `${escapedTerm}%`
+      : mode === 'endsWith'
+        ? `%${escapedTerm}`
+        : `%${escapedTerm}%`;
 
-    const expressions = columns.map((col) => eb(col as any, 'like', pattern as any));
-    return eb.or(expressions);
-  };
+  const expressions = columns.map((col) => eb(col as any, 'like', pattern as any));
+  return eb.or(expressions);
 }

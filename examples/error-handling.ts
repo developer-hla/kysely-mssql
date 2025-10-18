@@ -13,7 +13,6 @@ import {
   DuplicateKeyError,
   ForeignKeyError,
   RequiredFieldError,
-  TransactionDeadlockError,
 } from '@dev-hla/kysely-mssql';
 import type { Generated } from 'kysely';
 
@@ -111,35 +110,7 @@ async function updateUserBio(userId: number, bio: string) {
   }
 }
 
-// Example 4: Handling Transaction Deadlocks
-async function _transferPostOwnership(postId: number, newUserId: number) {
-  try {
-    await db.transaction().execute(async (tx) => {
-      // This could potentially deadlock with another transaction
-      const _post = await tx
-        .selectFrom('posts')
-        .selectAll()
-        .where('id', '=', postId)
-        .forUpdate() // Lock the row
-        .executeTakeFirstOrThrow();
-
-      await tx.updateTable('posts').set({ user_id: newUserId }).where('id', '=', postId).execute();
-
-      console.log('Post ownership transferred');
-    });
-  } catch (error) {
-    if (error instanceof TransactionDeadlockError) {
-      // Deadlock victim - retry the transaction
-      console.error('Transaction deadlock detected');
-      console.error('   Retry the operation');
-      throw new Error('Transaction failed due to deadlock. Please try again.');
-    }
-
-    throw error;
-  }
-}
-
-// Example 5: Comprehensive Error Handling
+// Example 4: Comprehensive Error Handling
 async function safeCreateUser(email: string, name: string) {
   try {
     return await createUser(email, name);

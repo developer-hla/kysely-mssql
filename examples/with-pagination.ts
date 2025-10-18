@@ -76,7 +76,7 @@ async function example3_PaginationWithSearch() {
     .selectFrom('posts')
     .innerJoin('users', 'users.id', 'posts.user_id')
     .select(['posts.id', 'posts.title', 'posts.content', 'users.name as author_name'])
-    .where(buildSearchFilter<Database, 'posts'>(['posts.title', 'posts.content'], searchTerm))
+    .where((eb) => buildSearchFilter(eb, ['posts.title', 'posts.content'], searchTerm))
     .orderBy('posts.created_at', 'desc');
 
   const result = await paginateQuery(query, { page: 1, limit: 10 });
