@@ -1,4 +1,4 @@
-import { sql } from 'kysely';
+import { type RawBuilder, sql } from 'kysely';
 
 /**
  * Creates a type-safe table reference for cross-database joins in SQL Server.
@@ -81,7 +81,7 @@ export function crossDbTable<
   DBMap extends Record<string, Record<string, any>>,
   DB extends keyof DBMap & string,
   Table extends keyof DBMap[DB] & string,
->(database: DB, table: Table): any {
+>(database: DB, table: Table): RawBuilder<unknown> {
   // If the table name doesn't include a schema (no dot), default to 'dbo'
   if (!table.includes('.')) {
     return sql`${sql.id(database, 'dbo', table)}`;

@@ -40,7 +40,7 @@ export function createMockKysely<DB>(): Kysely<DB> {
  * ```
  */
 export function createMockTransaction<DB>(): Transaction<DB> {
-  return {} as Transaction<DB>;
+  return { isTransaction: true } as Transaction<DB>;
 }
 
 /**

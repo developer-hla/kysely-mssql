@@ -86,6 +86,5 @@ export {
   type QueryHint,
   type SearchFilterOptions,
   type SearchMode,
-  type TransactionOptions,
   wrapInTransaction,
 } from './utilities/index.js';

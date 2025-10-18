@@ -60,7 +60,7 @@ import { type Kysely, sql } from 'kysely';
  * );
  * ```
  */
-export async function callStoredProcedure<Result extends Record<string, unknown>, DB = any>(
+export async function callStoredProcedure<Result extends Record<string, unknown>, DB = unknown>(
   db: Kysely<DB>,
   procedureName: string,
   params: Record<string, string | number | boolean | Date | null>,

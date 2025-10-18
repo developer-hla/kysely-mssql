@@ -20,4 +20,4 @@ export {
   type SearchMode,
 } from './search-filter.js';
 export { callStoredProcedure } from './stored-procedure.js';
-export { type TransactionOptions, wrapInTransaction } from './transaction.js';
+export { wrapInTransaction } from './transaction.js';
