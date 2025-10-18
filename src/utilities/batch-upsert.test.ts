@@ -50,7 +50,7 @@ function createMockUpsertDb() {
 
 describe('batchUpsert', () => {
   describe('basic functionality', () => {
-    it('should upsert records with default key field', async () => {
+    it('should upsert records with explicit key field', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
       const upserts = [
@@ -58,7 +58,7 @@ describe('batchUpsert', () => {
         { id: 2, name: 'Bob Updated', email: 'bob@test.com' },
       ];
 
-      await batchUpsert(db, 'users', upserts);
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledWith('users');
     });
@@ -66,7 +66,7 @@ describe('batchUpsert', () => {
     it('should handle empty array without executing queries', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', []);
+      await batchUpsert(db, 'users', [], { key: 'id' });
 
       expect(mockMergeInto).not.toHaveBeenCalled();
     });
@@ -74,7 +74,9 @@ describe('batchUpsert', () => {
     it('should upsert single record', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [{ id: 1, name: 'Updated', email: 'test@example.com' }]);
+      await batchUpsert(db, 'users', [{ id: 1, name: 'Updated', email: 'test@example.com' }], {
+        key: 'id',
+      });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
@@ -91,7 +93,9 @@ describe('batchUpsert', () => {
         mockExecute,
       } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [{ id: 1, name: 'Alice', email: 'alice@test.com' }]);
+      await batchUpsert(db, 'users', [{ id: 1, name: 'Alice', email: 'alice@test.com' }], {
+        key: 'id',
+      });
 
       expect(mockMergeInto).toHaveBeenCalled();
       expect(mockUsing).toHaveBeenCalled();
@@ -180,7 +184,7 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { batchSize: 3 });
+      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 3 });
 
       // With batch size 3 and 10 records, should make 4 upsert calls (3+3+3+1)
       expect(mockMergeInto).toHaveBeenCalledTimes(4);
@@ -195,7 +199,7 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts);
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
       // All 5 should fit in default batch
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
@@ -210,7 +214,7 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { batchSize: 1000 });
+      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 1000 });
 
       // 2500 records should result in 3 upsert calls (1000+1000+500)
       expect(mockMergeInto).toHaveBeenCalledTimes(3);
@@ -223,7 +227,7 @@ describe('batchUpsert', () => {
 
       const upserts = [{ name: 'Alice' }] as any;
 
-      await expect(batchUpsert(db, 'users', upserts)).rejects.toThrow(
+      await expect(batchUpsert(db, 'users', upserts, { key: 'id' })).rejects.toThrow(
         "Key field 'id' is missing in upsert object",
       );
     });
@@ -256,7 +260,7 @@ describe('batchUpsert', () => {
         { name: 'Bob' }, // Missing id
       ] as any;
 
-      await expect(batchUpsert(db, 'users', upserts)).rejects.toThrow(
+      await expect(batchUpsert(db, 'users', upserts, { key: 'id' })).rejects.toThrow(
         "Key field 'id' is missing in upsert object",
       );
     });
@@ -266,7 +270,9 @@ describe('batchUpsert', () => {
     it('should work with transaction executor', async () => {
       const { db: tx, mockMergeInto } = createMockUpsertDb();
 
-      await batchUpsert(tx, 'users', [{ id: 1, name: 'Updated', email: 'test@example.com' }]);
+      await batchUpsert(tx, 'users', [{ id: 1, name: 'Updated', email: 'test@example.com' }], {
+        key: 'id',
+      });
 
       expect(mockMergeInto).toHaveBeenCalledWith('users');
     });
@@ -280,7 +286,7 @@ describe('batchUpsert', () => {
         { id: 3, name: 'User 3', email: 'user3@test.com' },
       ];
 
-      await batchUpsert(tx, 'users', upserts);
+      await batchUpsert(tx, 'users', upserts, { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
@@ -290,7 +296,9 @@ describe('batchUpsert', () => {
     it('should insert when not matched', async () => {
       const { db, mockWhenNotMatched, mockThenInsertValues } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [{ id: 999, name: 'New User', email: 'newuser@test.com' }]);
+      await batchUpsert(db, 'users', [{ id: 999, name: 'New User', email: 'newuser@test.com' }], {
+        key: 'id',
+      });
 
       expect(mockWhenNotMatched).toHaveBeenCalled();
       expect(mockThenInsertValues).toHaveBeenCalled();
@@ -299,7 +307,9 @@ describe('batchUpsert', () => {
     it('should update when matched', async () => {
       const { db, mockWhenMatched, mockThenUpdateSet } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [{ id: 1, name: 'Updated User', email: 'updated@test.com' }]);
+      await batchUpsert(db, 'users', [{ id: 1, name: 'Updated User', email: 'updated@test.com' }], {
+        key: 'id',
+      });
 
       expect(mockWhenMatched).toHaveBeenCalled();
       expect(mockThenUpdateSet).toHaveBeenCalled();
@@ -308,10 +318,15 @@ describe('batchUpsert', () => {
     it('should handle mix of inserts and updates', async () => {
       const { db, mockWhenMatched, mockWhenNotMatched } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [
-        { id: 1, name: 'Existing Updated', email: 'existing@test.com' },
-        { id: 999, name: 'New User', email: 'newuser@test.com' },
-      ]);
+      await batchUpsert(
+        db,
+        'users',
+        [
+          { id: 1, name: 'Existing Updated', email: 'existing@test.com' },
+          { id: 999, name: 'New User', email: 'newuser@test.com' },
+        ],
+        { key: 'id' },
+      );
 
       // Both whenMatched and whenNotMatched should be called
       expect(mockWhenMatched).toHaveBeenCalled();
@@ -324,10 +339,12 @@ describe('batchUpsert', () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
       // Valid: users table with correct fields
-      await batchUpsert(db, 'users', [{ id: 1, name: 'Alice', email: 'alice@test.com' }]);
+      await batchUpsert(db, 'users', [{ id: 1, name: 'Alice', email: 'alice@test.com' }], {
+        key: 'id',
+      });
 
       // Valid: posts table with correct fields
-      await batchUpsert(db, 'posts', [{ id: 1, userId: 1, title: 'Post' }]);
+      await batchUpsert(db, 'posts', [{ id: 1, userId: 1, title: 'Post' }], { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
@@ -348,9 +365,12 @@ describe('batchUpsert', () => {
     it('should handle records with undefined values in upsert data', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [
-        { id: 1, name: undefined as any, email: 'test@example.com' },
-      ]);
+      await batchUpsert(
+        db,
+        'users',
+        [{ id: 1, name: undefined as any, email: 'test@example.com' }],
+        { key: 'id' },
+      );
 
       expect(mockMergeInto).toHaveBeenCalled();
     });
@@ -358,7 +378,9 @@ describe('batchUpsert', () => {
     it('should handle records with null values', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      await batchUpsert(db, 'users', [{ id: 1, name: null as any, email: 'test@example.com' }]);
+      await batchUpsert(db, 'users', [{ id: 1, name: null as any, email: 'test@example.com' }], {
+        key: 'id',
+      });
 
       expect(mockMergeInto).toHaveBeenCalled();
     });
@@ -372,7 +394,7 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { batchSize: 100 });
+      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 100 });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
@@ -386,7 +408,7 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { batchSize: 100 });
+      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 100 });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
@@ -403,7 +425,7 @@ describe('batchUpsert', () => {
         { id: 999, name: 'Charlie', email: 'charlie@test.com' },
       ];
 
-      await batchUpsert(db, 'users', apiData);
+      await batchUpsert(db, 'users', apiData, { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
@@ -422,7 +444,7 @@ describe('batchUpsert', () => {
         email: item.userEmail,
       }));
 
-      await batchUpsert(db, 'users', upserts);
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
@@ -439,7 +461,7 @@ describe('batchUpsert', () => {
       // Filter records before upsert
       const recordsToUpsert = allRecords.filter((r) => r.id > 1);
 
-      await batchUpsert(db, 'users', recordsToUpsert);
+      await batchUpsert(db, 'users', recordsToUpsert, { key: 'id' });
 
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });

@@ -690,14 +690,14 @@ const updates = [
   // ... 5,000 more updates
 ];
 
-await batchUpdate(db, 'products', updates);
+await batchUpdate(db, 'products', updates, { key: 'id' });
 // Automatically batches updates (default: 1000 per batch)
 // Each record: UPDATE products SET price=@1, stock=@2 WHERE id=@3
 
 // Custom batch size for performance tuning
-await batchUpdate(db, 'users', userUpdates, { batchSize: 500 });
+await batchUpdate(db, 'users', userUpdates, { key: 'id', batchSize: 500 });
 
-// Custom key field (default is 'id')
+// Custom key field
 const updates = [
   { email: 'user1@example.com', status: 'active' },
   { email: 'user2@example.com', status: 'inactive' },
@@ -720,15 +720,15 @@ await batchUpdate(db, 'user_settings', updates, {
 
 // Within a transaction (all batches atomic)
 await db.transaction().execute(async (tx) => {
-  await batchUpdate(tx, 'products', productUpdates);
-  await batchUpdate(tx, 'inventory', inventoryUpdates);
+  await batchUpdate(tx, 'products', productUpdates, { key: 'id' });
+  await batchUpdate(tx, 'inventory', inventoryUpdates, { key: 'id' });
 
   // All batches succeed or all rollback
 });
 
 // With error handling
 try {
-  await batchUpdate(db, 'products', updates, { batchSize: 1000 });
+  await batchUpdate(db, 'products', updates, { key: 'id', batchSize: 1000 });
   console.log(`Successfully updated ${updates.length} products`);
 } catch (error) {
   if (error instanceof ForeignKeyError) {
@@ -739,7 +739,7 @@ try {
 ```
 
 **Key Features:**
-- Single key field support (default: 'id')
+- Single key field support (must be explicitly specified)
 - Composite key support (multiple WHERE conditions)
 - Automatic batching to manage query load
 - Transaction support for atomic operations
@@ -1123,7 +1123,7 @@ await db.transaction().execute(async (tx) => {
 });
 ```
 
-### `batchUpdate<DB, TB>(executor, table, values, options?): Promise<void>`
+### `batchUpdate<DB, TB>(executor, table, values, options): Promise<void>`
 
 Update records in batches with single or composite key support.
 
@@ -1135,11 +1135,11 @@ Update records in batches with single or composite key support.
 - `executor: Kysely<DB> | Transaction<DB>` - Database or transaction instance
 - `table: TB` - Table name to update
 - `values: readonly Updateable<DB[TB]>[]` - Array of records to update
-- `options?: BatchUpdateOptions` - Optional batch configuration
+- `options: BatchUpdateOptions` - **Required** batch configuration
 
 **BatchUpdateOptions:**
 - `batchSize?: number` - Records per batch (default: 1000)
-- `key?: string | readonly string[]` - Column name(s) for WHERE clause (default: 'id')
+- `key: string | readonly string[]` - **Required** column name(s) for WHERE clause
 
 **Returns:** Promise<void>
 
@@ -1148,13 +1148,13 @@ Each record must include the key field(s). The function extracts key values for 
 
 **Example:**
 ```typescript
-// Basic usage (uses 'id' as key)
+// Basic usage with explicit key
 const updates = [
   { id: 1, price: 19.99, stock: 50 },
   { id: 2, price: 29.99, stock: 30 },
 ];
 
-await batchUpdate(db, 'products', updates);
+await batchUpdate(db, 'products', updates, { key: 'id' });
 // UPDATE products SET price=@1, stock=@2 WHERE id=@3
 
 // Custom single key
@@ -1169,8 +1169,8 @@ await batchUpdate(db, 'user_settings', updates, {
 
 // Within a transaction
 await db.transaction().execute(async (tx) => {
-  await batchUpdate(tx, 'products', productUpdates);
-  await batchUpdate(tx, 'inventory', inventoryUpdates);
+  await batchUpdate(tx, 'products', productUpdates, { key: 'id' });
+  await batchUpdate(tx, 'inventory', inventoryUpdates, { key: 'id' });
   // All batches are atomic
 });
 ```

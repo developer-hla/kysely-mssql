@@ -20,9 +20,9 @@ export interface BatchUpsertOptions<K extends string = string> {
    *
    * Can be a single column name or an array of column names for composite keys.
    *
-   * @default 'id'
+   * **Required** - no assumptions are made about your schema structure.
    */
-  key?: K | readonly K[];
+  key: K | readonly K[];
 }
 
 /**
@@ -73,7 +73,7 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to upsert into
  * @param values - Array of records to upsert (must include key field(s)). **Empty array is a no-op** (returns immediately).
- * @param options - Optional configuration
+ * @param options - Configuration including **required** `key` field
  *
  * @throws {Error} When a key field is missing from an upsert object
  * @throws {Error} Propagates any database errors from the MERGE operation
@@ -84,15 +84,16 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * - Single record: Executes a single MERGE statement
  * - Missing key field: Throws error immediately when detected during validation
  *
- * **For tables without 'id' field:** You must explicitly specify the `key` option.
+ * **Key field is required** - no assumptions are made about your schema structure.
+ * Explicitly specify which field(s) uniquely identify records.
  *
  * @example
- * Basic usage:
+ * Basic usage with explicit key:
  * ```typescript
  * await batchUpsert(db, 'products', [
  *   { id: 1, name: 'Product 1', price: 19.99 },
  *   { id: 999, name: 'New Product', price: 39.99 }
- * ]);
+ * ], { key: 'id' });
  * // Updates product 1 if exists, inserts product 999
  * ```
  *
@@ -109,27 +110,27 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  * Within a transaction:
  * ```typescript
  * await db.transaction().execute(async (tx) => {
- *   await batchUpsert(tx, 'products', productUpdates);
- *   await batchUpsert(tx, 'inventory', inventoryUpdates);
+ *   await batchUpsert(tx, 'products', productUpdates, { key: 'productId' });
+ *   await batchUpsert(tx, 'inventory', inventoryUpdates, { key: 'sku' });
  * });
  * ```
  */
 export async function batchUpsert<
   DB,
   TB extends keyof DB & string,
-  K extends keyof DB[TB] & string = Extract<keyof DB[TB] & string, 'id'>,
+  K extends keyof DB[TB] & string,
 >(
   executor: Kysely<DB> | Transaction<DB>,
   table: TB,
   values: readonly Insertable<DB[TB]>[],
-  options?: BatchUpsertOptions<K>,
+  options: BatchUpsertOptions<K>,
 ): Promise<void> {
   if (values.length === 0) {
     return;
   }
 
-  const batchSize = options?.batchSize ?? 1000;
-  const keyOption = (options?.key ?? 'id') as K | readonly K[];
+  const batchSize = options.batchSize ?? 1000;
+  const keyOption = options.key;
   const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
 
   for (let i = 0; i < values.length; i += batchSize) {
@@ -157,8 +158,10 @@ export async function batchUpsert<
 
       await executor
         .mergeInto(table)
+        // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
         .using(valuesSource as any, `source.${key}` as any, `${table}.${key}` as any)
         .whenMatched()
+        // Type assertion required: Dynamic column references in UPDATE SET clause
         .thenUpdateSet((eb: any) => {
           const updates: Partial<Record<string, unknown>> = {};
           for (const col of updateColumns) {
@@ -167,6 +170,7 @@ export async function batchUpsert<
           return updates as any;
         })
         .whenNotMatched()
+        // Type assertion required: Dynamic column references in INSERT VALUES clause
         .thenInsertValues((eb: any) => {
           const inserts: Partial<Record<string, unknown>> = {};
           for (const col of allColumns) {
@@ -178,11 +182,13 @@ export async function batchUpsert<
     } else {
       await executor
         .mergeInto(table)
+        // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
         .using(valuesSource as any, (eb: any) => {
           const conditions = keys.map((key) => eb(`source.${key}`, '=', eb.ref(`${table}.${key}`)));
           return eb.and(conditions);
         })
         .whenMatched()
+        // Type assertion required: Dynamic column references in UPDATE SET clause
         .thenUpdateSet((eb: any) => {
           const updates: Partial<Record<string, unknown>> = {};
           for (const col of updateColumns) {
@@ -191,6 +197,7 @@ export async function batchUpsert<
           return updates as any;
         })
         .whenNotMatched()
+        // Type assertion required: Dynamic column references in INSERT VALUES clause
         .thenInsertValues((eb: any) => {
           const inserts: Partial<Record<string, unknown>> = {};
           for (const col of allColumns) {
