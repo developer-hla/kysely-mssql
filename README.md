@@ -35,7 +35,7 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`callStoredProcedure`**: Execute stored procedures with typed parameters
 - **`wrapInTransaction`**: Composable transaction helper for building transactional functions
 - **`addQueryHint`**: Add SQL Server query hints (RECOMPILE, MAXDOP, etc.) to optimize queries
-- **`crossDbTable`**: Type-safe cross-database joins with automatic schema handling
+- **`createCrossDbHelper`**: Type-safe cross-database joins with automatic schema handling
 - **`deduplicateJoins`**: Automatically remove duplicate joins from dynamic queries
 - **`buildSearchFilter`**: Multi-column LIKE search with OR logic and wildcard escaping
 - **`batchInsert`**: Bulk insert records in batches to avoid SQL Server parameter limits
@@ -397,7 +397,7 @@ const complexQuery = await db
 Perform type-safe joins across databases on the same SQL Server instance:
 
 ```typescript
-import { crossDbTable } from '@dev-hla/kysely-mssql';
+import { createCrossDbHelper } from '@dev-hla/kysely-mssql';
 
 // Define your database schemas
 interface MainDB {
@@ -420,14 +420,14 @@ type MyDatabases = {
   ReportingDB: ReportingDB;
 };
 
+// Create helper with full type inference
+const crossDb = createCrossDbHelper<MyDatabases>();
+
 // Query with cross-database join (fully type-safe!)
 const results = await db
   .selectFrom('users') // Current database
   .innerJoin(
-    crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>(
-      'ArchiveDB',
-      'historical.orders'
-    ),
+    crossDb('ArchiveDB', 'historical.orders'), // Fully inferred! ✅
     'ArchiveDB.historical.orders.userId',
     'users.id'
   )
@@ -436,15 +436,9 @@ const results = await db
 
 // Join multiple external databases
 const report = await db
-  .selectFrom(crossDbTable<MyDatabases, 'ReportingDB', 'analytics.sales'>(
-    'ReportingDB',
-    'analytics.sales'
-  ))
+  .selectFrom(crossDb('ReportingDB', 'analytics.sales'))
   .innerJoin(
-    crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>(
-      'ArchiveDB',
-      'historical.orders'
-    ),
+    crossDb('ArchiveDB', 'historical.orders'),
     'ReportingDB.analytics.sales.date',
     'ArchiveDB.historical.orders.archivedAt'
   )
@@ -452,18 +446,19 @@ const report = await db
   .execute();
 
 // Schema handling: defaults to 'dbo' if not specified
-crossDbTable<MyDatabases, 'MainDB', 'users'>('MainDB', 'users');
+crossDb('MainDB', 'users');
 // Generates: MainDB.dbo.users
 
-crossDbTable<MyDatabases, 'ArchiveDB', 'historical.orders'>('ArchiveDB', 'historical.orders');
+crossDb('ArchiveDB', 'historical.orders');
 // Generates: ArchiveDB.historical.orders
 ```
 
 **Benefits:**
-- Full TypeScript type safety across databases
+- Full TypeScript type safety across databases with complete type inference
 - Compile-time validation of database and table names
 - Automatic schema handling (defaults to 'dbo')
 - Proper SQL identifier escaping
+- Idiomatic Kysely pattern - no explicit type parameters needed
 
 ### 8. Deduplicate Joins
 
@@ -952,20 +947,18 @@ const report = await db
   .execute();
 ```
 
-### `crossDbTable<DBMap, DB, Table>(database, table)`
+### `createCrossDbHelper<DBMap>()`
 
-Create a type-safe table reference for cross-database joins.
+Creates a cross-database helper function with full type inference.
 
 **Type Parameters:**
 - `DBMap` - Type mapping database names to their schemas
-- `DB` - Database name (key in DBMap)
-- `Table` - Table name (key in database schema)
 
-**Parameters:**
-- `database: DB` - The database name
-- `table: Table` - The table name (with or without schema)
+**Returns:** A helper function `(database, table) => RawBuilder` with inferred types
 
-**Returns:** Kysely SQL identifier for use in queries
+The returned helper function accepts:
+- `database: DB` - The database name (inferred from DBMap)
+- `table: Table` - The table name (inferred from database schema)
 
 **Example:**
 ```typescript
@@ -974,10 +967,14 @@ type MyDatabases = {
   ArchiveDB: ArchiveSchema,
 };
 
+// Create helper once
+const crossDb = createCrossDbHelper<MyDatabases>();
+
+// Use with full type inference - no explicit type parameters!
 const results = await db
   .selectFrom('users')
   .innerJoin(
-    crossDbTable<MyDatabases, 'ArchiveDB', 'orders'>('ArchiveDB', 'orders'),
+    crossDb('ArchiveDB', 'orders'), // ✅ Fully inferred!
     'ArchiveDB.dbo.orders.userId',
     'users.id'
   )

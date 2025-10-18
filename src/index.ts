@@ -77,7 +77,7 @@ export {
   batchUpsert,
   buildSearchFilter,
   callStoredProcedure,
-  crossDbTable,
+  createCrossDbHelper,
   deduplicateJoins,
   type PaginationMetadata,
   type PaginationParams,

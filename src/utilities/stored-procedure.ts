@@ -20,7 +20,7 @@ import { type Kysely, sql } from 'kysely';
  *   Price: number;
  * }
  *
- * const products = await callStoredProcedure<ProductResult>(
+ * const products = await callStoredProcedure<Database, ProductResult>(
  *   db,
  *   'sp_GetProductsByCategory',
  *   {
@@ -37,7 +37,7 @@ import { type Kysely, sql } from 'kysely';
  * @example
  * With null parameters:
  * ```typescript
- * const results = await callStoredProcedure<UserResult>(
+ * const results = await callStoredProcedure<Database, UserResult>(
  *   db,
  *   'sp_GetUsersByRole',
  *   {
@@ -50,7 +50,7 @@ import { type Kysely, sql } from 'kysely';
  * @example
  * With Date parameters:
  * ```typescript
- * const orders = await callStoredProcedure<OrderResult>(
+ * const orders = await callStoredProcedure<Database, OrderResult>(
  *   db,
  *   'sp_GetOrdersByDateRange',
  *   {
@@ -60,7 +60,10 @@ import { type Kysely, sql } from 'kysely';
  * );
  * ```
  */
-export async function callStoredProcedure<Result extends Record<string, unknown>, DB = unknown>(
+export async function callStoredProcedure<
+  DB,
+  Result extends Record<string, unknown> = Record<string, unknown>,
+>(
   db: Kysely<DB>,
   procedureName: string,
   params: Record<string, string | number | boolean | Date | null>,

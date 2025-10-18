@@ -1,27 +1,20 @@
 import { type RawBuilder, sql } from 'kysely';
 
 /**
- * Creates a type-safe table reference for cross-database joins in SQL Server.
+ * Creates a cross-database helper with full type inference for your database mapping.
  *
  * SQL Server supports querying tables across multiple databases on the same server
- * using three-part or four-part naming:
- * - Three-part: `DatabaseName.SchemaName.TableName`
- * - Four-part: `ServerName.DatabaseName.SchemaName.TableName`
+ * using three-part naming: `DatabaseName.SchemaName.TableName`
  *
- * This utility helps construct these references with full TypeScript type safety,
- * ensuring that database names and table names are validated at compile time.
+ * This factory function creates a helper that provides full TypeScript type safety
+ * and inference for cross-database queries.
  *
  * @template DBMap - A type mapping database names to their schema definitions
- * @template DB - The database name (must be a key in DBMap)
- * @template Table - The table name (must be a key in the selected database's schema)
  *
- * @param database - The name of the database containing the table
- * @param table - The table name, optionally including schema (e.g., 'dbo.users' or 'users')
- *
- * @returns A Kysely SQL identifier that can be used in queries
+ * @returns A helper function for creating type-safe cross-database table references
  *
  * @example
- * Define your database mapping:
+ * Define your database mapping and create helper:
  * ```typescript
  * import type { DB as MainSchema } from './main-db-schema';
  * import type { DB as ArchiveSchema } from './archive-db-schema';
@@ -30,15 +23,17 @@ import { type RawBuilder, sql } from 'kysely';
  *   MainDB: MainSchema,
  *   ArchiveDB: ArchiveSchema,
  * };
+ *
+ * const crossDb = createCrossDbHelper<MyDatabases>();
  * ```
  *
  * @example
- * Simple cross-database query:
+ * Simple cross-database query with full type inference:
  * ```typescript
  * const results = await db
  *   .selectFrom('users')
  *   .innerJoin(
- *     crossDbTable<MyDatabases, 'ArchiveDB', 'orders'>('ArchiveDB', 'orders'),
+ *     crossDb('ArchiveDB', 'orders'),  // Fully typed! ✅
  *     'ArchiveDB.dbo.orders.userId',
  *     'users.id'
  *   )
@@ -49,17 +44,14 @@ import { type RawBuilder, sql } from 'kysely';
  * @example
  * With explicit schema:
  * ```typescript
- * const table = crossDbTable<MyDatabases, 'ArchiveDB', 'reporting.sales'>(
- *   'ArchiveDB',
- *   'reporting.sales'
- * );
+ * const table = crossDb('ArchiveDB', 'reporting.sales');
  * // Generates: ArchiveDB.reporting.sales
  * ```
  *
  * @example
  * Default schema (dbo):
  * ```typescript
- * const table = crossDbTable<MyDatabases, 'MainDB', 'users'>('MainDB', 'users');
+ * const table = crossDb('MainDB', 'users');
  * // Generates: MainDB.dbo.users (dbo added automatically)
  * ```
  *
@@ -67,7 +59,7 @@ import { type RawBuilder, sql } from 'kysely';
  * Complex cross-database join with aggregation:
  * ```typescript
  * const report = await db
- *   .selectFrom(crossDbTable<MyDatabases, 'ArchiveDB', 'orders'>('ArchiveDB', 'orders'))
+ *   .selectFrom(crossDb('ArchiveDB', 'orders'))
  *   .innerJoin('customers', 'customers.id', 'ArchiveDB.dbo.orders.customerId')
  *   .select((eb) => [
  *     'customers.name',
@@ -77,15 +69,16 @@ import { type RawBuilder, sql } from 'kysely';
  *   .execute();
  * ```
  */
-export function crossDbTable<
-  DBMap extends Record<string, Record<string, any>>,
-  DB extends keyof DBMap & string,
-  Table extends keyof DBMap[DB] & string,
->(database: DB, table: Table): RawBuilder<unknown> {
-  // If the table name doesn't include a schema (no dot), default to 'dbo'
-  if (!table.includes('.')) {
-    return sql`${sql.id(database, 'dbo', table)}`;
-  }
+export function createCrossDbHelper<DBMap extends Record<string, Record<string, any>>>() {
+  return function crossDbTable<
+    DB extends keyof DBMap & string,
+    Table extends keyof DBMap[DB] & string,
+  >(database: DB, table: Table): RawBuilder<DBMap[DB][Table]> {
+    // If the table name doesn't include a schema (no dot), default to 'dbo'
+    if (!table.includes('.')) {
+      return sql`${sql.id(database, 'dbo', table)}`;
+    }
 
-  return sql`${sql.id(database, table)}`;
+    return sql`${sql.id(database, table)}`;
+  };
 }

@@ -34,7 +34,7 @@ interface UserResult extends Record<string, unknown> {
 }
 
 async function example1_BasicStoredProcedure() {
-  const users = await callStoredProcedure<UserResult, Database>(db, 'sp_GetUsersByDepartment', {
+  const users = await callStoredProcedure<Database, UserResult>(db, 'sp_GetUsersByDepartment', {
     Department: 'Engineering',
   });
 
@@ -51,7 +51,7 @@ interface SalaryRangeResult extends Record<string, unknown> {
 }
 
 async function example2_MultipleParameters() {
-  const users = await callStoredProcedure<SalaryRangeResult, Database>(
+  const users = await callStoredProcedure<Database, SalaryRangeResult>(
     db,
     'sp_GetUsersBySalaryRange',
     {
@@ -68,7 +68,7 @@ async function example2_MultipleParameters() {
 
 // Build type-safe wrappers for better developer experience
 async function getUsersByDepartment(department: string): Promise<UserResult[]> {
-  return callStoredProcedure<UserResult, Database>(db, 'sp_GetUsersByDepartment', {
+  return callStoredProcedure<Database, UserResult>(db, 'sp_GetUsersByDepartment', {
     Department: department,
   });
 }
@@ -78,7 +78,7 @@ async function getUsersBySalaryRange(
   maxSalary: number,
   department?: string,
 ): Promise<SalaryRangeResult[]> {
-  return callStoredProcedure<SalaryRangeResult, Database>(db, 'sp_GetUsersBySalaryRange', {
+  return callStoredProcedure<Database, SalaryRangeResult>(db, 'sp_GetUsersBySalaryRange', {
     MinSalary: minSalary,
     MaxSalary: maxSalary,
     Department: department ?? null,

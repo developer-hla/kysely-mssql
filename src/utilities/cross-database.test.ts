@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
-import { crossDbTable } from './cross-database.js';
+import { createCrossDbHelper } from './cross-database.js';
 
 // Mock database schemas for testing
 interface MainDB {
@@ -41,12 +41,14 @@ type TestDatabases = {
   ReportingDB: ReportingDB;
 };
 
-describe('crossDbTable', () => {
+const crossDb = createCrossDbHelper<TestDatabases>();
+
+describe('createCrossDbHelper', () => {
   describe('schema handling', () => {
     it('should add dbo schema when table name has no schema', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
+      crossDb('MainDB', 'users');
 
       expect(sqlIdSpy).toHaveBeenCalledWith('MainDB', 'dbo', 'users');
     });
@@ -54,10 +56,7 @@ describe('crossDbTable', () => {
     it('should not add dbo when table name includes schema', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'ArchiveDB', 'historical.orders'>(
-        'ArchiveDB',
-        'historical.orders',
-      );
+      crossDb('ArchiveDB', 'historical.orders');
 
       expect(sqlIdSpy).toHaveBeenCalledWith('ArchiveDB', 'historical.orders');
     });
@@ -65,10 +64,7 @@ describe('crossDbTable', () => {
     it('should handle custom schema correctly', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'ReportingDB', 'analytics.metrics'>(
-        'ReportingDB',
-        'analytics.metrics',
-      );
+      crossDb('ReportingDB', 'analytics.metrics');
 
       expect(sqlIdSpy).toHaveBeenCalledWith('ReportingDB', 'analytics.metrics');
     });
@@ -76,14 +72,11 @@ describe('crossDbTable', () => {
 
   describe('type safety', () => {
     it('should accept valid database and table combinations', () => {
-      // These should compile without TypeScript errors
-      crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
-      crossDbTable<TestDatabases, 'MainDB', 'orders'>('MainDB', 'orders');
-      crossDbTable<TestDatabases, 'ArchiveDB', 'users'>('ArchiveDB', 'users');
-      crossDbTable<TestDatabases, 'ArchiveDB', 'historical.orders'>(
-        'ArchiveDB',
-        'historical.orders',
-      );
+      // These should compile without TypeScript errors - fully inferred!
+      crossDb('MainDB', 'users');
+      crossDb('MainDB', 'orders');
+      crossDb('ArchiveDB', 'users');
+      crossDb('ArchiveDB', 'historical.orders');
 
       // Type checking test - if this compiles, types are working
       expect(true).toBe(true);
@@ -109,7 +102,7 @@ describe('crossDbTable', () => {
 
   describe('SQL identifier generation', () => {
     it('should return SQL template literal', () => {
-      const result = crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
+      const result = crossDb('MainDB', 'users');
 
       // The result should be a SQL template tag result
       expect(result).toBeDefined();
@@ -119,10 +112,10 @@ describe('crossDbTable', () => {
     it('should generate different results for different tables', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
+      crossDb('MainDB', 'users');
       const firstCall = sqlIdSpy.mock.calls[sqlIdSpy.mock.calls.length - 1];
 
-      crossDbTable<TestDatabases, 'MainDB', 'orders'>('MainDB', 'orders');
+      crossDb('MainDB', 'orders');
       const secondCall = sqlIdSpy.mock.calls[sqlIdSpy.mock.calls.length - 1];
 
       expect(firstCall).not.toEqual(secondCall);
@@ -131,10 +124,10 @@ describe('crossDbTable', () => {
     it('should generate different results for different databases', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
+      crossDb('MainDB', 'users');
       const firstCall = sqlIdSpy.mock.calls[sqlIdSpy.mock.calls.length - 1];
 
-      crossDbTable<TestDatabases, 'ArchiveDB', 'users'>('ArchiveDB', 'users');
+      crossDb('ArchiveDB', 'users');
       const secondCall = sqlIdSpy.mock.calls[sqlIdSpy.mock.calls.length - 1];
 
       expect(firstCall).not.toEqual(secondCall);
@@ -147,10 +140,7 @@ describe('crossDbTable', () => {
 
       // Even though the type system might not allow this in practice,
       // the function should handle it correctly
-      crossDbTable<TestDatabases, 'ReportingDB', 'analytics.metrics'>(
-        'ReportingDB',
-        'analytics.metrics',
-      );
+      crossDb('ReportingDB', 'analytics.metrics');
 
       expect(sqlIdSpy).toHaveBeenCalledWith('ReportingDB', 'analytics.metrics');
     });
@@ -158,7 +148,7 @@ describe('crossDbTable', () => {
     it('should work with different database name casing', () => {
       const sqlIdSpy = vi.spyOn(sql, 'id');
 
-      crossDbTable<TestDatabases, 'ArchiveDB', 'users'>('ArchiveDB', 'users');
+      crossDb('ArchiveDB', 'users');
 
       expect(sqlIdSpy).toHaveBeenCalledWith('ArchiveDB', 'dbo', 'users');
     });
@@ -167,19 +157,37 @@ describe('crossDbTable', () => {
   describe('usage patterns', () => {
     it('should be usable in query builder context', () => {
       // Simulate usage in a real query
-      const tableRef = crossDbTable<TestDatabases, 'ArchiveDB', 'users'>('ArchiveDB', 'users');
+      const tableRef = crossDb('ArchiveDB', 'users');
 
       expect(tableRef).toBeDefined();
       // In real usage, this would be passed to .from() or .join()
     });
 
     it('should support multiple cross-database references in same query', () => {
-      const table1 = crossDbTable<TestDatabases, 'MainDB', 'users'>('MainDB', 'users');
-      const table2 = crossDbTable<TestDatabases, 'ArchiveDB', 'users'>('ArchiveDB', 'users');
+      const table1 = crossDb('MainDB', 'users');
+      const table2 = crossDb('ArchiveDB', 'users');
 
       expect(table1).toBeDefined();
       expect(table2).toBeDefined();
       expect(table1).not.toBe(table2);
+    });
+  });
+
+  describe('factory pattern', () => {
+    it('should create independent helpers for different database mappings', () => {
+      type OtherDatabases = {
+        DB1: MainDB;
+      };
+
+      const crossDb1 = createCrossDbHelper<TestDatabases>();
+      const crossDb2 = createCrossDbHelper<OtherDatabases>();
+
+      // Both should work independently
+      const result1 = crossDb1('MainDB', 'users');
+      const result2 = crossDb2('DB1', 'users');
+
+      expect(result1).toBeDefined();
+      expect(result2).toBeDefined();
     });
   });
 });
