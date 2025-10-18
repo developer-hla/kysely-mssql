@@ -290,49 +290,41 @@ const products = await callStoredProcedure<ProductResult>(
 Build composable transactional functions:
 
 ```typescript
-import { wrapInTransaction, type Transaction } from '@dev-hla/kysely-mssql';
+import { wrapInTransaction, type Transaction, type Kysely } from '@dev-hla/kysely-mssql';
 
 // Functions can work standalone OR participate in larger transactions
 async function createUser(
-  params: CreateUserParams,
-  tx?: Transaction<Database>
+  executor: Kysely<Database> | Transaction<Database>,
+  params: CreateUserParams
 ) {
-  return wrapInTransaction({
-    db,
-    callback: async (transaction) => {
-      return transaction
-        .insertInto('users')
-        .values(params)
-        .returning(['id', 'name'])
-        .executeTakeFirstOrThrow();
-    },
-    previousTransaction: tx, // Reuse existing transaction if provided
+  return wrapInTransaction(executor, async (tx) => {
+    return tx
+      .insertInto('users')
+      .values(params)
+      .returning(['id', 'name'])
+      .executeTakeFirstOrThrow();
   });
 }
 
 async function createUserProfile(
-  params: CreateProfileParams,
-  tx?: Transaction<Database>
+  executor: Kysely<Database> | Transaction<Database>,
+  params: CreateProfileParams
 ) {
-  return wrapInTransaction({
-    db,
-    callback: async (transaction) => {
-      return transaction
-        .insertInto('user_profiles')
-        .values(params)
-        .execute();
-    },
-    previousTransaction: tx,
+  return wrapInTransaction(executor, async (tx) => {
+    return tx
+      .insertInto('user_profiles')
+      .values(params)
+      .execute();
   });
 }
 
-// Usage 1: Standalone (each creates its own transaction)
-const user = await createUser({ name: 'John', email: 'john@example.com' });
+// Usage 1: Standalone (creates its own transaction)
+const user = await createUser(db, { name: 'John', email: 'john@example.com' });
 
 // Usage 2: Composed (both share one transaction)
 await db.transaction().execute(async (tx) => {
-  const user = await createUser({ name: 'Jane', email: 'jane@example.com' }, tx);
-  await createUserProfile({ userId: user.id, bio: 'Hello!' }, tx);
+  const user = await createUser(tx, { name: 'Jane', email: 'jane@example.com' });
+  await createUserProfile(tx, { userId: user.id, bio: 'Hello!' });
   // Both operations in same transaction - atomic!
 });
 ```
@@ -556,7 +548,7 @@ import { buildSearchFilter } from '@dev-hla/kysely-mssql';
 // Basic search across multiple columns
 const results = await db
   .selectFrom('posts')
-  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm))
   .selectAll()
   .execute();
 // SQL: WHERE (title LIKE '%searchTerm%' OR content LIKE '%searchTerm%')
@@ -564,14 +556,14 @@ const results = await db
 // Different search modes
 const users = await db
   .selectFrom('users')
-  .where(buildSearchFilter(['name'], 'John', { mode: 'startsWith' }))
+  .where((eb) => buildSearchFilter(eb, ['name'], 'John', { mode: 'startsWith' }))
   .selectAll()
   .execute();
 // SQL: WHERE name LIKE 'John%'
 
 const emails = await db
   .selectFrom('users')
-  .where(buildSearchFilter(['email'], '@gmail.com', { mode: 'endsWith' }))
+  .where((eb) => buildSearchFilter(eb, ['email'], '@gmail.com', { mode: 'endsWith' }))
   .selectAll()
   .execute();
 // SQL: WHERE email LIKE '%@gmail.com'
@@ -583,8 +575,8 @@ let query = db
   .selectAll();
 
 if (searchTerm) {
-  query = query.where(
-    buildSearchFilter(['name', 'description', 'sku'], searchTerm)
+  query = query.where((eb) =>
+    buildSearchFilter(eb, ['name', 'description', 'sku'], searchTerm)
   );
 }
 
@@ -594,7 +586,7 @@ const products = await query.execute();
 const query = db
   .selectFrom('posts')
   .where('status', '=', 'published')
-  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm))
   .selectAll()
   .orderBy('created_at', 'desc');
 
@@ -906,20 +898,50 @@ Execute a stored procedure with typed parameters.
 
 **Returns:** Array of result rows typed as `Result[]`
 
-### `wrapInTransaction<DB, T>(options): Promise<T>`
+### `wrapInTransaction<DB, T>(executor, callback): Promise<T>`
 
 Execute a callback within a transaction (composable).
 
 **Parameters:**
-```typescript
-{
-  db: Kysely<DB>;
-  callback: (tx: Transaction<DB>) => Promise<T>;
-  previousTransaction?: Transaction<DB>;
-}
-```
+- `executor: Kysely<DB> | Transaction<DB>` - Database instance or existing transaction
+- `callback: (tx: Transaction<DB>) => Promise<T>` - Function to execute within transaction
 
 **Returns:** Result of callback function
+
+**Behavior:**
+- If `executor` is a `Transaction`, reuses it (no new transaction created)
+- If `executor` is a `Kysely` instance, creates a new transaction
+
+**Example:**
+```typescript
+async function transferFunds(
+  executor: Kysely<DB> | Transaction<DB>,
+  from: string,
+  to: string,
+  amount: number
+) {
+  return wrapInTransaction(executor, async (tx) => {
+    await tx.updateTable('accounts')
+      .set({ balance: sql`balance - ${amount}` })
+      .where('id', '=', from)
+      .execute();
+
+    await tx.updateTable('accounts')
+      .set({ balance: sql`balance + ${amount}` })
+      .where('id', '=', to)
+      .execute();
+  });
+}
+
+// Standalone: creates transaction
+await transferFunds(db, 'acc1', 'acc2', 100);
+
+// Composed: reuses transaction
+await db.transaction().execute(async (tx) => {
+  await transferFunds(tx, 'acc1', 'acc2', 100);
+  await logTransfer(tx, 'acc1', 'acc2', 100);
+});
+```
 
 ### `addQueryHint<DB, TB, O>(query, hint): SelectQueryBuilder<DB, TB, O>`
 
@@ -1007,7 +1029,7 @@ const query = deduplicateJoins(
 );
 ```
 
-### `buildSearchFilter<DB, TB>(columns, searchTerm, options?)`
+### `buildSearchFilter<DB, TB>(eb, columns, searchTerm, options?)`
 
 Build a multi-column search filter with OR logic and automatic wildcard escaping.
 
@@ -1016,6 +1038,7 @@ Build a multi-column search filter with OR logic and automatic wildcard escaping
 - `TB` - Table name
 
 **Parameters:**
+- `eb: ExpressionBuilder<DB, TB>` - Kysely expression builder (provided by `.where()` callback)
 - `columns: readonly (keyof DB[TB] & string)[]` - Array of column names to search
 - `searchTerm: string` - The term to search for
 - `options?: SearchFilterOptions` - Optional search configuration
@@ -1023,7 +1046,7 @@ Build a multi-column search filter with OR logic and automatic wildcard escaping
 **SearchFilterOptions:**
 - `mode?: 'contains' | 'startsWith' | 'endsWith'` - Search mode (default: 'contains')
 
-**Returns:** Expression builder function for use with `.where()`
+**Returns:** Expression for use in WHERE clause
 
 **Features:**
 - Automatically escapes special LIKE characters (%, _, [, ])
@@ -1031,26 +1054,28 @@ Build a multi-column search filter with OR logic and automatic wildcard escaping
 - OR logic across all specified columns
 - Three search modes for different matching patterns
 
+**Usage Note:** Must be used within a `.where()` callback to access the expression builder
+
 **Example:**
 ```typescript
 // Basic usage
 const results = await db
   .selectFrom('posts')
-  .where(buildSearchFilter(['title', 'content'], searchTerm))
+  .where((eb) => buildSearchFilter(eb, ['title', 'content'], searchTerm))
   .selectAll()
   .execute();
 
 // With startsWith mode
 const users = await db
   .selectFrom('users')
-  .where(buildSearchFilter(['name'], 'John', { mode: 'startsWith' }))
+  .where((eb) => buildSearchFilter(eb, ['name'], 'John', { mode: 'startsWith' }))
   .selectAll()
   .execute();
 
 // Conditional application
 let query = db.selectFrom('products').selectAll();
 if (searchTerm) {
-  query = query.where(buildSearchFilter(['name', 'sku'], searchTerm));
+  query = query.where((eb) => buildSearchFilter(eb, ['name', 'sku'], searchTerm));
 }
 ```
 

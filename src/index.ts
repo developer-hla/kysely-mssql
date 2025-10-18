@@ -34,22 +34,20 @@
  */
 
 // ===== KYSELY RE-EXPORTS =====
-// Re-export commonly used Kysely types for convenience
 export {
   type AliasedExpression,
   DeduplicateJoinsPlugin,
   type InferResult,
   type InsertObject,
+  type Kysely,
   type SelectQueryBuilder,
   sql,
   type Transaction,
   type UpdateObject,
   type ValueExpression,
 } from 'kysely';
-
 // ===== CONNECTION =====
 export { type ConnectionConfig, createConnection } from './connection/index.js';
-
 // ===== ERRORS =====
 export {
   DatabaseConnectionError,
@@ -62,9 +60,9 @@ export {
   TransactionConflictError,
   TransactionDeadlockError,
 } from './errors/index.js';
-
 // ===== LOGGING =====
 export { createLogger, type LogLevel } from './logging/index.js';
+export type { Executor } from './types.js';
 
 // ===== UTILITIES =====
 export {

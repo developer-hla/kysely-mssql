@@ -20,8 +20,17 @@ export interface BatchInsertOptions {
  *
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to insert into
- * @param values - Array of records to insert
+ * @param values - Array of records to insert. **Empty array is a no-op** (returns immediately).
  * @param options - Optional configuration
+ *
+ * @throws {Error} Propagates any database errors from the insert operations
+ *
+ * @remarks
+ * **Edge Cases:**
+ * - Empty array: Returns immediately without executing any queries
+ * - Single record: Executes a single INSERT statement
+ * - Large records: If records have many columns, consider reducing `batchSize` to avoid
+ *   hitting the 2100 parameter limit (parameters = batchSize × columnCount)
  *
  * @example
  * Basic usage:
@@ -39,6 +48,13 @@ export interface BatchInsertOptions {
  *   await batchInsert(tx, 'users', users);
  *   await batchInsert(tx, 'user_profiles', profiles);
  * });
+ * ```
+ *
+ * @example
+ * Custom batch size for parameter-heavy records:
+ * ```typescript
+ * // 20 columns × 100 records = 2000 parameters (safe)
+ * await batchInsert(db, 'large_table', records, { batchSize: 100 });
  * ```
  */
 export async function batchInsert<DB, TB extends keyof DB & string>(

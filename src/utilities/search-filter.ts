@@ -46,10 +46,21 @@ type ColumnReference<DB, TB extends keyof DB> = TB extends keyof DB & string
  * Automatically escapes special LIKE pattern characters (%, _, [, ]) in the search term
  * to prevent unintended wildcard matching.
  *
+ * @param eb - Kysely expression builder (provided by `.where()` callback)
  * @param columns - Array of column names to search
- * @param searchTerm - The term to search for
+ * @param searchTerm - The term to search for. **Empty string will match records with empty/blank fields.**
+ *                     Consider validating non-empty before calling this function.
  * @param options - Optional configuration for search behavior
- * @returns Expression builder function for use with .where()
+ * @returns Expression for use in WHERE clause
+ *
+ * @remarks
+ * **Edge Cases:**
+ * - Empty string: Searches for empty/blank values (`LIKE '%%'`) which may match many records
+ * - Single character: Works correctly, escapes special chars if needed
+ * - Special characters: Automatically escaped to match literals (e.g., `50%` searches for literal "50%")
+ * - Very long terms: No built-in length limit, but consider UX/performance implications
+ *
+ * **Usage Note:** Must be used within a `.where()` callback to access the expression builder.
  *
  * @example
  * Basic usage:

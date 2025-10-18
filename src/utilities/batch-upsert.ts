@@ -72,8 +72,19 @@ function createValuesSource<R extends Record<string, unknown>, A extends string>
  *
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to upsert into
- * @param values - Array of records to upsert (must include key field(s))
+ * @param values - Array of records to upsert (must include key field(s)). **Empty array is a no-op** (returns immediately).
  * @param options - Optional configuration
+ *
+ * @throws {Error} When a key field is missing from an upsert object
+ * @throws {Error} Propagates any database errors from the MERGE operation
+ *
+ * @remarks
+ * **Edge Cases:**
+ * - Empty array: Returns immediately without executing any queries
+ * - Single record: Executes a single MERGE statement
+ * - Missing key field: Throws error immediately when detected during validation
+ *
+ * **For tables without 'id' field:** You must explicitly specify the `key` option.
  *
  * @example
  * Basic usage:
@@ -125,14 +136,17 @@ export async function batchUpsert<
     const batch = values.slice(i, i + batchSize);
     const typedBatch = batch as Record<string, unknown>[];
 
-    for (const record of typedBatch) {
+    typedBatch.forEach((record, recordIndex) => {
       for (const key of keys) {
         const keyValue = record[key];
         if (keyValue === undefined) {
-          throw new Error(`Key field '${key}' is missing in upsert object`);
+          const absoluteIndex = i + recordIndex;
+          throw new Error(
+            `Key field '${key}' is missing in upsert object at index ${absoluteIndex}. Record: ${JSON.stringify(record).slice(0, 200)}`,
+          );
         }
       }
-    }
+    });
 
     const allColumns = Object.keys(typedBatch[0]) as (keyof DB[TB] & string)[];
     const updateColumns = allColumns.filter((col) => !keys.includes(col as K));

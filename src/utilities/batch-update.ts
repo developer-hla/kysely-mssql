@@ -1,4 +1,5 @@
-import type { Kysely, Transaction, Updateable } from 'kysely';
+import type { AliasedRawBuilder, Kysely, Transaction, Updateable } from 'kysely';
+import { sql } from 'kysely';
 
 /**
  * Options for configuring batch update behavior.
@@ -30,16 +31,69 @@ export interface BatchUpdateOptions<K extends string = string> {
 export type UpdateObjectWithKey<T, K extends keyof T> = Updateable<T> & Required<Pick<T, K>>;
 
 /**
- * Updates records in batches to avoid SQL Server parameter limits.
+ * Helper function to create a VALUES table constructor for use in MERGE USING clause.
+ * Transforms an array of records into a SQL VALUES expression with column aliases.
+ *
+ * @internal
+ * @example
+ * ```typescript
+ * const data = [
+ *   { id: 1, name: 'Alice' },
+ *   { id: 2, name: 'Bob' }
+ * ];
+ * const source = createValuesSource(data, 'source');
+ * // SQL: (VALUES (1, 'Alice'), (2, 'Bob')) AS source(id, name)
+ * ```
+ */
+function createValuesSource<R extends Record<string, unknown>, A extends string>(
+  records: R[],
+  alias: A,
+): AliasedRawBuilder<R, A> {
+  const keys = Object.keys(records[0]);
+
+  const valueRows = sql.join(
+    records.map((record) => {
+      const values = sql.join(
+        keys.map((key) => sql`${sql.val(record[key])}`),
+        sql`, `,
+      );
+      return sql`(${values})`;
+    }),
+    sql`, `,
+  );
+
+  const wrappedAlias = sql.ref(alias);
+  const wrappedColumns = sql.join(keys.map(sql.ref), sql`, `);
+  const aliasSql = sql`${wrappedAlias}(${wrappedColumns})`;
+
+  return sql<R>`(VALUES ${valueRows})`.as<A>(aliasSql);
+}
+
+/**
+ * Updates records in batches using SQL Server's MERGE statement for optimal bulk performance.
  *
  * Each record must include the key field (default: 'id') to identify which
- * record to update. Executes individual UPDATE statements batched to stay
- * within SQL Server's parameter limits.
+ * record to update. Uses MERGE statement to perform true bulk updates instead
+ * of individual UPDATE statements.
  *
  * @param executor - Kysely database instance or transaction
  * @param table - Table name to update
- * @param values - Array of records to update (must include key field)
+ * @param values - Array of records to update (must include key field). **Empty array is a no-op** (returns immediately).
  * @param options - Optional configuration
+ *
+ * @throws {Error} When a key field is missing from an update object
+ * @throws {Error} Propagates any database errors from the MERGE operation
+ *
+ * @remarks
+ * **Edge Cases:**
+ * - Empty array: Returns immediately without executing any queries
+ * - Single record: Executes a single MERGE statement
+ * - Missing key field: Throws error immediately when detected during validation
+ *
+ * **For tables without 'id' field:** You must explicitly specify the `key` option.
+ *
+ * **Performance:** Uses SQL Server's MERGE statement for true bulk updates. Much faster
+ * than individual UPDATE statements for large datasets.
  *
  * @example
  * Basic usage:
@@ -88,30 +142,59 @@ export async function batchUpdate<
 
   for (let i = 0; i < values.length; i += batchSize) {
     const batch = values.slice(i, i + batchSize);
+    const typedBatch = batch as Record<string, unknown>[];
 
-    for (const record of batch) {
-      const typedRecord = record as Record<string, unknown>;
-
+    // Validate that all records have the required key fields
+    typedBatch.forEach((record, recordIndex) => {
       for (const key of keys) {
-        const keyValue = typedRecord[key];
+        const keyValue = record[key];
         if (keyValue === undefined) {
-          throw new Error(`Key field '${key}' is missing in update object`);
+          const absoluteIndex = i + recordIndex;
+          throw new Error(
+            `Key field '${key}' is missing in update object at index ${absoluteIndex}. Record: ${JSON.stringify(record).slice(0, 200)}`,
+          );
         }
       }
+    });
 
-      const updateData = { ...typedRecord };
-      for (const key of keys) {
-        delete updateData[key];
-      }
+    // Extract all columns and determine update columns (exclude key fields)
+    const allColumns = Object.keys(typedBatch[0]) as (keyof DB[TB] & string)[];
+    const updateColumns = allColumns.filter((col) => !keys.includes(col as K));
+    const valuesSource = createValuesSource(typedBatch, 'source');
 
-      let query = executor.updateTable(table).set(updateData as any);
+    // Use MERGE for bulk updates (different logic for single vs composite keys)
+    if (keys.length === 1) {
+      const key = keys[0];
 
-      for (const key of keys) {
-        const keyValue = typedRecord[key];
-        query = query.where(key as any, '=', keyValue);
-      }
-
-      await query.execute();
+      await executor
+        .mergeInto(table)
+        .using(valuesSource as any, `source.${key}` as any, `${table}.${key}` as any)
+        .whenMatched()
+        .thenUpdateSet((eb: any) => {
+          const updates: Partial<Record<string, unknown>> = {};
+          for (const col of updateColumns) {
+            updates[col] = eb.ref(`source.${col}`);
+          }
+          return updates as any;
+        })
+        .execute();
+    } else {
+      // Composite key: use complex ON clause
+      await executor
+        .mergeInto(table)
+        .using(valuesSource as any, (eb: any) => {
+          const conditions = keys.map((key) => eb(`source.${key}`, '=', eb.ref(`${table}.${key}`)));
+          return eb.and(conditions);
+        })
+        .whenMatched()
+        .thenUpdateSet((eb: any) => {
+          const updates: Partial<Record<string, unknown>> = {};
+          for (const col of updateColumns) {
+            updates[col] = eb.ref(`source.${col}`);
+          }
+          return updates as any;
+        })
+        .execute();
     }
   }
 }

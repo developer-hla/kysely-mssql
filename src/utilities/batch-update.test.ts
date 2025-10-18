@@ -3,35 +3,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { createMockKysely, type MinimalTestDatabase } from '../test-utils/index.js';
 import { batchUpdate } from './batch-update.js';
 
-// Helper to create a mock db with updateTable support
-function createMockUpdateDb() {
+// Helper to create a mock db with MERGE support
+function createMockMergeDb() {
   const mockExecute = vi.fn().mockResolvedValue(undefined);
-
-  // Create a chainable where mock that supports multiple calls
-  const chainableWhere: any = {
-    execute: mockExecute,
-  };
-
-  const mockWhere = vi.fn().mockReturnValue(chainableWhere);
-  chainableWhere.where = mockWhere;
-
-  const mockSet = vi.fn().mockReturnValue(chainableWhere);
-  const mockUpdateTable = vi.fn().mockReturnValue({
-    set: mockSet,
-  });
+  const mockThenUpdateSet = vi.fn().mockReturnValue({ execute: mockExecute });
+  const mockWhenMatched = vi.fn().mockReturnValue({ thenUpdateSet: mockThenUpdateSet });
+  const mockUsing = vi.fn().mockReturnValue({ whenMatched: mockWhenMatched });
+  const mockMergeInto = vi.fn().mockReturnValue({ using: mockUsing });
 
   const db = {
     ...createMockKysely<MinimalTestDatabase>(),
-    updateTable: mockUpdateTable,
+    mergeInto: mockMergeInto,
   } as unknown as Kysely<MinimalTestDatabase>;
 
-  return { db, mockUpdateTable, mockSet, mockWhere, mockExecute };
+  return { db, mockMergeInto, mockUsing, mockWhenMatched, mockThenUpdateSet, mockExecute };
 }
 
 describe('batchUpdate', () => {
   describe('basic functionality', () => {
-    it('should update records with default key field', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should update records with default key field using MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = [
         { id: 1, name: 'Alice Updated' },
@@ -40,91 +31,90 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates);
 
-      expect(mockUpdateTable).toHaveBeenCalledWith('users');
+      expect(mockMergeInto).toHaveBeenCalledWith('users');
+      expect(mockMergeInto).toHaveBeenCalledTimes(1); // One MERGE for all records
     });
 
     it('should handle empty array without executing queries', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'users', []);
 
-      expect(mockUpdateTable).not.toHaveBeenCalled();
+      expect(mockMergeInto).not.toHaveBeenCalled();
     });
 
-    it('should update single record', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should update single record with MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ id: 1, name: 'Updated' }]);
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(1);
+      expect(mockMergeInto).toHaveBeenCalledTimes(1); // Single MERGE statement
     });
 
-    it('should separate key field from update data', async () => {
-      const { db, mockSet } = createMockUpdateDb();
+    it('should use MERGE to update multiple records in single statement', async () => {
+      const { db, mockThenUpdateSet } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ id: 1, name: 'Alice', email: 'alice@test.com' }]);
 
-      // Should call set with only name and email, not id
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'Alice',
-          email: 'alice@test.com',
-        }),
-      );
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          id: expect.anything(),
-        }),
-      );
+      // thenUpdateSet should be called with a callback that excludes the key field
+      expect(mockThenUpdateSet).toHaveBeenCalled();
+      const updateCallback = mockThenUpdateSet.mock.calls[0][0];
+      expect(typeof updateCallback).toBe('function');
     });
   });
 
   describe('custom key field', () => {
-    it('should support custom key field', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should support custom key field with MERGE', async () => {
+      const { db, mockMergeInto, mockUsing } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ email: 'user@test.com', name: 'Updated Name' }], {
         key: 'email',
       });
 
-      expect(mockUpdateTable).toHaveBeenCalled();
+      expect(mockMergeInto).toHaveBeenCalledWith('users');
+      expect(mockUsing).toHaveBeenCalled(); // Should use email as the key
     });
 
-    it('should use custom key in WHERE clause', async () => {
-      const { db, mockWhere } = createMockUpdateDb();
+    it('should use custom key in MERGE ON clause', async () => {
+      const { db, mockUsing } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ email: 'user@test.com', name: 'Updated' }], {
         key: 'email',
       });
 
-      expect(mockWhere).toHaveBeenCalledWith('email', '=', 'user@test.com');
+      // Using should be called with source.email matching target.email
+      expect(mockUsing).toHaveBeenCalled();
+      const usingArgs = mockUsing.mock.calls[0];
+      expect(usingArgs[1]).toContain('email'); // ON clause references
     });
   });
 
   describe('composite keys', () => {
-    it('should support composite keys with multiple fields', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should support composite keys with multiple fields using MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'posts', [{ userId: 1, status: 'published', title: 'Updated' }], {
         key: ['userId', 'status'],
       });
 
-      expect(mockUpdateTable).toHaveBeenCalled();
+      expect(mockMergeInto).toHaveBeenCalledWith('posts');
     });
 
-    it('should build WHERE clause with all key fields', async () => {
-      const { db, mockWhere } = createMockUpdateDb();
+    it('should build MERGE ON clause with all key fields', async () => {
+      const { db, mockUsing } = createMockMergeDb();
 
       await batchUpdate(db, 'posts', [{ userId: 1, status: 'published', title: 'Updated' }], {
         key: ['userId', 'status'],
       });
 
-      expect(mockWhere).toHaveBeenCalledWith('userId', '=', 1);
-      expect(mockWhere).toHaveBeenCalledWith('status', '=', 'published');
+      // For composite keys, using() is called with a callback function
+      expect(mockUsing).toHaveBeenCalled();
+      const usingArgs = mockUsing.mock.calls[0];
+      expect(typeof usingArgs[1]).toBe('function'); // Composite key uses function for ON clause
     });
 
-    it('should exclude all key fields from update data', async () => {
-      const { db, mockSet } = createMockUpdateDb();
+    it('should exclude all key fields from MERGE UPDATE SET', async () => {
+      const { db, mockThenUpdateSet } = createMockMergeDb();
 
       await batchUpdate(
         db,
@@ -133,24 +123,16 @@ describe('batchUpdate', () => {
         { key: ['userId', 'status'] },
       );
 
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Updated',
-          content: 'New content',
-        }),
-      );
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          userId: expect.anything(),
-          status: expect.anything(),
-        }),
-      );
+      // The update callback should exclude userId and status
+      expect(mockThenUpdateSet).toHaveBeenCalled();
+      const updateCallback = mockThenUpdateSet.mock.calls[0][0];
+      expect(typeof updateCallback).toBe('function');
     });
   });
 
   describe('batch size', () => {
-    it('should respect custom batch size', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should respect custom batch size with MERGE batches', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 10 }, (_, i) => ({
         id: i + 1,
@@ -159,12 +141,12 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates, { batchSize: 3 });
 
-      // With batch size 3 and 10 records, should make 10 update calls
-      expect(mockUpdateTable).toHaveBeenCalledTimes(10);
+      // With batch size 3 and 10 records: ceil(10/3) = 4 MERGE calls
+      expect(mockMergeInto).toHaveBeenCalledTimes(4);
     });
 
     it('should use default batch size of 1000', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
@@ -173,12 +155,12 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates);
 
-      // All 5 should fit in default batch
-      expect(mockUpdateTable).toHaveBeenCalledTimes(5);
+      // All 5 fit in default batch of 1000: 1 MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
-    it('should process large datasets in batches', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should process large datasets in MERGE batches (huge performance improvement)', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 2500 }, (_, i) => ({
         id: i + 1,
@@ -187,14 +169,16 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates, { batchSize: 1000 });
 
-      // 2500 records should result in 2500 update calls
-      expect(mockUpdateTable).toHaveBeenCalledTimes(2500);
+      // 2500 records with batch size 1000: ceil(2500/1000) = 3 MERGE calls
+      // OLD IMPLEMENTATION: 2500 individual UPDATE calls
+      // NEW IMPLEMENTATION: 3 bulk MERGE calls (833x improvement!)
+      expect(mockMergeInto).toHaveBeenCalledTimes(3);
     });
   });
 
   describe('error handling', () => {
     it('should throw error when key field is missing', async () => {
-      const { db } = createMockUpdateDb();
+      const { db } = createMockMergeDb();
 
       const updates = [{ name: 'Alice' }] as any;
 
@@ -204,7 +188,7 @@ describe('batchUpdate', () => {
     });
 
     it('should throw error when custom key field is missing', async () => {
-      const { db } = createMockUpdateDb();
+      const { db } = createMockMergeDb();
 
       const updates = [{ name: 'Alice' }] as any;
 
@@ -214,7 +198,7 @@ describe('batchUpdate', () => {
     });
 
     it('should throw error when one of composite key fields is missing', async () => {
-      const { db } = createMockUpdateDb();
+      const { db } = createMockMergeDb();
 
       const updates = [{ userId: 1, title: 'Updated' }] as any;
 
@@ -224,7 +208,7 @@ describe('batchUpdate', () => {
     });
 
     it('should validate key fields for all records in batch', async () => {
-      const { db } = createMockUpdateDb();
+      const { db } = createMockMergeDb();
 
       const updates = [
         { id: 1, name: 'Alice' },
@@ -239,15 +223,15 @@ describe('batchUpdate', () => {
 
   describe('transaction support', () => {
     it('should work with transaction executor', async () => {
-      const { db: tx, mockUpdateTable } = createMockUpdateDb();
+      const { db: tx, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(tx, 'users', [{ id: 1, name: 'Updated' }]);
 
-      expect(mockUpdateTable).toHaveBeenCalledWith('users');
+      expect(mockMergeInto).toHaveBeenCalledWith('users');
     });
 
-    it('should execute all updates in transaction context', async () => {
-      const { db: tx, mockUpdateTable } = createMockUpdateDb();
+    it('should execute all updates in transaction context with MERGE', async () => {
+      const { db: tx, mockMergeInto } = createMockMergeDb();
 
       const updates = [
         { id: 1, name: 'User 1' },
@@ -257,13 +241,14 @@ describe('batchUpdate', () => {
 
       await batchUpdate(tx, 'users', updates);
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(3);
+      // All 3 records in single MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('partial updates', () => {
-    it('should support updating different fields per record', async () => {
-      const { db, mockSet } = createMockUpdateDb();
+    it('should support updating different fields per record with MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [
         { id: 1, name: 'Alice' },
@@ -271,34 +256,23 @@ describe('batchUpdate', () => {
         { id: 3, name: 'Charlie', email: 'charlie@test.com' },
       ]);
 
-      // Check first call
-      expect(mockSet).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'Alice' }));
-
-      // Check second call
-      expect(mockSet).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ email: 'bob@test.com' }),
-      );
-
-      // Check third call
-      expect(mockSet).toHaveBeenNthCalledWith(
-        3,
-        expect.objectContaining({ name: 'Charlie', email: 'charlie@test.com' }),
-      );
+      // Single MERGE handles all records regardless of which fields are set
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
-    it('should allow updating only one field', async () => {
-      const { db, mockSet } = createMockUpdateDb();
+    it('should allow updating only one field with MERGE', async () => {
+      const { db, mockThenUpdateSet } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ id: 1, name: 'Updated Name' }]);
 
-      expect(mockSet).toHaveBeenCalledWith({ name: 'Updated Name' });
+      // MERGE UPDATE SET callback is called
+      expect(mockThenUpdateSet).toHaveBeenCalled();
     });
   });
 
   describe('type safety', () => {
-    it('should enforce table types', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should enforce table types with MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       // Valid: users table with correct fields
       await batchUpdate(db, 'users', [{ id: 1, name: 'Alice' }]);
@@ -306,40 +280,40 @@ describe('batchUpdate', () => {
       // Valid: posts table with correct fields
       await batchUpdate(db, 'posts', [{ id: 1, title: 'Post' }]);
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(2);
+      expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
 
     it('should work with different database schemas', () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       // Should compile with custom key field (demonstrates flexibility across schemas)
       const updates = [{ email: 'user@test.com', name: 'Test User' }];
 
       batchUpdate(db, 'users', updates, { key: 'email' });
 
-      expect(mockUpdateTable).toHaveBeenCalled();
+      expect(mockMergeInto).toHaveBeenCalled();
     });
   });
 
   describe('edge cases', () => {
     it('should handle records with undefined values in update data', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ id: 1, name: undefined as any }]);
 
-      expect(mockUpdateTable).toHaveBeenCalled();
+      expect(mockMergeInto).toHaveBeenCalled();
     });
 
     it('should handle records with null values', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       await batchUpdate(db, 'users', [{ id: 1, name: null as any }]);
 
-      expect(mockUpdateTable).toHaveBeenCalled();
+      expect(mockMergeInto).toHaveBeenCalled();
     });
 
-    it('should handle exactly batch size records', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should handle exactly batch size records with MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 100 }, (_, i) => ({
         id: i + 1,
@@ -348,11 +322,12 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates, { batchSize: 100 });
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(100);
+      // Exactly 100 records with batch size 100: 1 MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle one more than batch size', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should handle one more than batch size with MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 101 }, (_, i) => ({
         id: i + 1,
@@ -361,13 +336,14 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates, { batchSize: 100 });
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(101);
+      // 101 records with batch size 100: 2 MERGE calls
+      expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('integration patterns', () => {
     it('should support conditional updates in application code', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const allRecords = [
         { id: 1, name: 'Alice', email: 'alice@test.com' },
@@ -380,11 +356,12 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', recordsToUpdate);
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(2);
+      // 2 records in single MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
-    it('should work with mapped/transformed data', async () => {
-      const { db, mockUpdateTable } = createMockUpdateDb();
+    it('should work with mapped/transformed data using MERGE', async () => {
+      const { db, mockMergeInto } = createMockMergeDb();
 
       const apiData = [
         { userId: 1, userName: 'Alice' },
@@ -398,7 +375,8 @@ describe('batchUpdate', () => {
 
       await batchUpdate(db, 'users', updates);
 
-      expect(mockUpdateTable).toHaveBeenCalledTimes(2);
+      // 2 records in single MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -69,7 +69,8 @@ export async function callStoredProcedure<
   params: Record<string, string | number | boolean | Date | null>,
 ): Promise<Result[]> {
   const sqlParams = Object.entries(params).map(([key, value]) => {
-    return sql`@${sql.raw(key)}=${value}`;
+    // Use sql.ref for proper identifier escaping instead of sql.raw
+    return sql`@${sql.ref(key)}=${value}`;
   });
 
   const paramString = sql.join(sqlParams, sql`, `);

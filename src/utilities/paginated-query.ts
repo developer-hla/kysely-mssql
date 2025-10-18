@@ -1,4 +1,4 @@
-import { type SelectQueryBuilder, sql } from 'kysely';
+import type { SelectQueryBuilder } from 'kysely';
 
 const DEFAULT_PAGINATION_PAGE = 1;
 const DEFAULT_PAGINATION_LIMIT = 50;
@@ -49,8 +49,21 @@ export interface PaginationResult<Row> {
  * 2. The data query with OFFSET and FETCH NEXT for the current page
  *
  * @param query - The Kysely select query to paginate
- * @param params - Pagination parameters (page and limit)
+ * @param params - Pagination parameters (page and limit). Both must be >= 1.
  * @returns Paginated result with data and metadata
+ *
+ * @throws {Error} When page number is less than 1
+ * @throws {Error} When limit is less than 1
+ *
+ * @remarks
+ * **Edge Cases:**
+ * - Empty results: Returns `data: []` with `totalPages: 0`
+ * - Page beyond last page: Returns empty `data` array
+ * - Defaults: page=1, limit=50
+ *
+ * **Validation:**
+ * - page must be >= 1 (throws error if < 1)
+ * - limit must be >= 1 (throws error if < 1)
  *
  * @example
  * ```typescript
@@ -78,6 +91,15 @@ export async function paginateQuery<DB, TB extends keyof DB, O>(
   params: PaginationParams = {},
 ): Promise<PaginationResult<O>> {
   const { page = DEFAULT_PAGINATION_PAGE, limit = DEFAULT_PAGINATION_LIMIT } = params;
+
+  // Validate pagination parameters
+  if (page < 1) {
+    throw new Error(`Page number must be >= 1, got ${page}`);
+  }
+  if (limit < 1) {
+    throw new Error(`Limit must be >= 1, got ${limit}`);
+  }
+
   const offset = (page - 1) * limit;
 
   const countQuery = query
@@ -85,7 +107,7 @@ export async function paginateQuery<DB, TB extends keyof DB, O>(
     .clearLimit()
     .clearOffset()
     .clearOrderBy()
-    .select(sql.raw<number>('COUNT(*)').as('count'));
+    .select((eb) => eb.fn.countAll<number>().as('count'));
 
   const queryWithPagination = query.fetch(limit).offset(offset);
 
