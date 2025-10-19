@@ -2,9 +2,9 @@
  * Utility functions for common database operations.
  */
 
-export { type BatchInsertOptions, batchInsert } from './batch-insert.js';
-export { type BatchUpdateOptions, batchUpdate } from './batch-update.js';
-export { type BatchUpsertOptions, batchUpsert } from './batch-upsert.js';
+export { batchInsert } from './batch/insert.js';
+export { type BatchUpdateOptions, batchUpdate } from './batch/update.js';
+export { type BatchUpsertOptions, batchUpsert } from './batch/upsert.js';
 export { createCrossDbHelper } from './cross-database.js';
 export { deduplicateJoins } from './deduplicate-joins.js';
 export {

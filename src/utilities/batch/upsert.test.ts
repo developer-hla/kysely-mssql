@@ -1,7 +1,7 @@
 import type { Kysely } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
-import { createMockKysely, type MinimalTestDatabase } from '../test-utils/index.js';
-import { batchUpsert } from './batch-upsert.js';
+import { createMockKysely, type MinimalTestDatabase } from '../../test-utils/index.js';
+import { batchUpsert } from './upsert.js';
 
 // Helper to create a mock db with mergeInto support
 function createMockUpsertDb() {
@@ -175,7 +175,7 @@ describe('batchUpsert', () => {
   });
 
   describe('batch size', () => {
-    it('should respect custom batch size', async () => {
+    it('should use automatic batch sizing based on column count', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
       const upserts = Array.from({ length: 10 }, (_, i) => ({
@@ -184,10 +184,10 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 3 });
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
-      // With batch size 3 and 10 records, should make 4 upsert calls (3+3+3+1)
-      expect(mockMergeInto).toHaveBeenCalledTimes(4);
+      // 3 columns → floor(2000/3) = 666 batch size → all 10 fit in 1 call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
     it('should use default batch size of 1000', async () => {
@@ -205,7 +205,7 @@ describe('batchUpsert', () => {
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
-    it('should process large datasets in batches', async () => {
+    it('should process large datasets in batches with smart sizing', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
       const upserts = Array.from({ length: 2500 }, (_, i) => ({
@@ -214,10 +214,11 @@ describe('batchUpsert', () => {
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 1000 });
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
-      // 2500 records should result in 3 upsert calls (1000+1000+500)
-      expect(mockMergeInto).toHaveBeenCalledTimes(3);
+      // Automatic batch sizing: 3 columns → floor(2000/3) = 666
+      // 2500 records → ceil(2500/666) = 4 batches
+      expect(mockMergeInto).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -388,28 +389,30 @@ describe('batchUpsert', () => {
     it('should handle exactly batch size records', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      const upserts = Array.from({ length: 100 }, (_, i) => ({
+      const upserts = Array.from({ length: 666 }, (_, i) => ({
         id: i + 1,
         name: `User ${i}`,
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 100 });
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
+      // 3 columns → batch size 666 → exactly 1 call
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
     it('should handle one more than batch size', async () => {
       const { db, mockMergeInto } = createMockUpsertDb();
 
-      const upserts = Array.from({ length: 101 }, (_, i) => ({
+      const upserts = Array.from({ length: 667 }, (_, i) => ({
         id: i + 1,
         name: `User ${i}`,
         email: `user${i}@test.com`,
       }));
 
-      await batchUpsert(db, 'users', upserts, { key: 'id', batchSize: 100 });
+      await batchUpsert(db, 'users', upserts, { key: 'id' });
 
+      // 3 columns → batch size 666 → ceil(667/666) = 2 calls
       expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
   });

@@ -3,8 +3,8 @@ import {
   createMockKysely,
   createMockTransaction,
   type MinimalTestDatabase,
-} from '../test-utils/index.js';
-import { batchInsert } from './batch-insert.js';
+} from '../../test-utils/index.js';
+import { batchInsert } from './insert.js';
 
 describe('batchInsert', () => {
   describe('basic functionality', () => {
@@ -60,8 +60,8 @@ describe('batchInsert', () => {
     });
   });
 
-  describe('batch size options', () => {
-    it('should use default batch size of 1000', async () => {
+  describe('automatic batch sizing', () => {
+    it('should use optimal batch size based on column count', async () => {
       const mockDb = createMockKysely<MinimalTestDatabase>();
       const mockInsertQuery = {
         values: vi.fn().mockReturnThis(),
@@ -76,31 +76,11 @@ describe('batchInsert', () => {
 
       await batchInsert(mockDb, 'users', values);
 
-      // Should split into 2 batches (1000 + 500)
+      // 2 columns → batch size 1000 → ceil(1500/1000) = 2 batches
       expect(mockDb.insertInto).toHaveBeenCalledTimes(2);
     });
 
-    it('should use custom batch size when provided', async () => {
-      const mockDb = createMockKysely<MinimalTestDatabase>();
-      const mockInsertQuery = {
-        values: vi.fn().mockReturnThis(),
-        execute: vi.fn().mockResolvedValue([]),
-      };
-      mockDb.insertInto = vi.fn().mockReturnValue(mockInsertQuery);
-
-      const values = Array.from({ length: 1000 }, (_, i) => ({
-        name: `User ${i}`,
-        email: `user${i}@example.com`,
-      }));
-
-      await batchInsert(mockDb, 'users', values, { batchSize: 250 });
-
-      // Should split into 4 batches (250 each)
-      expect(mockDb.insertInto).toHaveBeenCalledTimes(4);
-      expect(mockInsertQuery.values).toHaveBeenCalledTimes(4);
-    });
-
-    it('should handle batch size larger than array', async () => {
+    it('should insert small arrays in single batch', async () => {
       const mockDb = createMockKysely<MinimalTestDatabase>();
       const mockInsertQuery = {
         values: vi.fn().mockReturnThis(),
@@ -113,9 +93,9 @@ describe('batchInsert', () => {
         { name: 'User 2', email: 'user2@example.com' },
       ];
 
-      await batchInsert(mockDb, 'users', values, { batchSize: 10000 });
+      await batchInsert(mockDb, 'users', values);
 
-      // Should insert all in one batch
+      // Small array fits in one batch
       expect(mockDb.insertInto).toHaveBeenCalledTimes(1);
     });
   });
@@ -175,16 +155,16 @@ describe('batchInsert', () => {
       };
       mockDb.insertInto = vi.fn().mockReturnValue(mockInsertQuery);
 
-      // 1234 records with batch size 500
+      // 1234 records with 2 columns → batch size 1000
       const values = Array.from({ length: 1234 }, (_, i) => ({
         name: `User ${i}`,
         email: `user${i}@example.com`,
       }));
 
-      await batchInsert(mockDb, 'users', values, { batchSize: 500 });
+      await batchInsert(mockDb, 'users', values);
 
-      // Should split into 3 batches (500, 500, 234)
-      expect(mockDb.insertInto).toHaveBeenCalledTimes(3);
+      // ceil(1234/1000) = 2 batches (1000, 234)
+      expect(mockDb.insertInto).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -340,7 +320,7 @@ describe('batchInsert', () => {
       expect(mockInsertQuery.execute).toHaveBeenCalledTimes(10);
     });
 
-    it('should handle small batch sizes for parameter-heavy records', async () => {
+    it('should calculate smaller batch sizes for parameter-heavy records', async () => {
       const mockDb = createMockKysely<MinimalTestDatabase>();
       const mockInsertQuery = {
         values: vi.fn().mockReturnThis(),
@@ -348,15 +328,33 @@ describe('batchInsert', () => {
       };
       mockDb.insertInto = vi.fn().mockReturnValue(mockInsertQuery);
 
-      // 1000 records with small batch size (simulating many columns)
+      // Simulate records with many columns (20 columns)
       const values = Array.from({ length: 1000 }, (_, i) => ({
-        name: `User ${i}`,
-        email: `user${i}@example.com`,
+        col1: i,
+        col2: i,
+        col3: i,
+        col4: i,
+        col5: i,
+        col6: i,
+        col7: i,
+        col8: i,
+        col9: i,
+        col10: i,
+        col11: i,
+        col12: i,
+        col13: i,
+        col14: i,
+        col15: i,
+        col16: i,
+        col17: i,
+        col18: i,
+        col19: i,
+        col20: i,
       }));
 
-      await batchInsert(mockDb, 'users', values, { batchSize: 100 });
+      await batchInsert(mockDb, 'users', values);
 
-      // Should execute 10 batches of 100 each
+      // 20 columns → floor(2000/20) = 100 batch size → ceil(1000/100) = 10 batches
       expect(mockDb.insertInto).toHaveBeenCalledTimes(10);
     });
   });

@@ -1,7 +1,7 @@
 import type { Kysely } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
-import { createMockKysely, type MinimalTestDatabase } from '../test-utils/index.js';
-import { batchUpdate } from './batch-update.js';
+import { createMockKysely, type MinimalTestDatabase } from '../../test-utils/index.js';
+import { batchUpdate } from './update.js';
 
 // Helper to create a mock db with MERGE support
 function createMockMergeDb() {
@@ -133,7 +133,7 @@ describe('batchUpdate', () => {
   });
 
   describe('batch size', () => {
-    it('should respect custom batch size with MERGE batches', async () => {
+    it('should use automatic batch sizing based on column count', async () => {
       const { db, mockMergeInto } = createMockMergeDb();
 
       const updates = Array.from({ length: 10 }, (_, i) => ({
@@ -141,10 +141,10 @@ describe('batchUpdate', () => {
         name: `User ${i}`,
       }));
 
-      await batchUpdate(db, 'users', updates, { key: 'id', batchSize: 3 });
+      await batchUpdate(db, 'users', updates, { key: 'id' });
 
-      // With batch size 3 and 10 records: ceil(10/3) = 4 MERGE calls
-      expect(mockMergeInto).toHaveBeenCalledTimes(4);
+      // 2 columns → batch size 1000 → all 10 fit in 1 MERGE call
+      expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
     it('should use default batch size of 1000', async () => {
@@ -169,9 +169,10 @@ describe('batchUpdate', () => {
         name: `User ${i}`,
       }));
 
-      await batchUpdate(db, 'users', updates, { key: 'id', batchSize: 1000 });
+      await batchUpdate(db, 'users', updates, { key: 'id' });
 
-      // 2500 records with batch size 1000: ceil(2500/1000) = 3 MERGE calls
+      // 2 columns → batch size floor(2000/2) = 1000
+      // 2500 records: ceil(2500/1000) = 3 MERGE calls
       // OLD IMPLEMENTATION: 2500 individual UPDATE calls
       // NEW IMPLEMENTATION: 3 bulk MERGE calls (833x improvement!)
       expect(mockMergeInto).toHaveBeenCalledTimes(3);
@@ -322,28 +323,28 @@ describe('batchUpdate', () => {
     it('should handle exactly batch size records with MERGE', async () => {
       const { db, mockMergeInto } = createMockMergeDb();
 
-      const updates = Array.from({ length: 100 }, (_, i) => ({
+      const updates = Array.from({ length: 1000 }, (_, i) => ({
         id: i + 1,
         name: `User ${i}`,
       }));
 
-      await batchUpdate(db, 'users', updates, { key: 'id', batchSize: 100 });
+      await batchUpdate(db, 'users', updates, { key: 'id' });
 
-      // Exactly 100 records with batch size 100: 1 MERGE call
+      // 2 columns → batch size 1000 → exactly 1 MERGE call
       expect(mockMergeInto).toHaveBeenCalledTimes(1);
     });
 
     it('should handle one more than batch size with MERGE', async () => {
       const { db, mockMergeInto } = createMockMergeDb();
 
-      const updates = Array.from({ length: 101 }, (_, i) => ({
+      const updates = Array.from({ length: 1001 }, (_, i) => ({
         id: i + 1,
         name: `User ${i}`,
       }));
 
-      await batchUpdate(db, 'users', updates, { key: 'id', batchSize: 100 });
+      await batchUpdate(db, 'users', updates, { key: 'id' });
 
-      // 101 records with batch size 100: 2 MERGE calls
+      // 2 columns → batch size 1000 → ceil(1001/1000) = 2 MERGE calls
       expect(mockMergeInto).toHaveBeenCalledTimes(2);
     });
   });
