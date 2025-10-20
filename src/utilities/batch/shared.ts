@@ -67,7 +67,10 @@ export function calculateOptimalBatchSize(records: readonly Record<string, unkno
     const columnCount = Object.keys(record).length;
 
     if (columnCount === 0) {
-      return DEFAULT_BATCH_SIZE;
+      throw new Error(
+        'Cannot calculate batch size: record contains no columns. ' +
+          'All records must have at least one column.',
+      );
     }
 
     if (columnCount > maxColumnCount) {
@@ -146,10 +149,11 @@ export function validateKeyFields(
   records.forEach((record, recordIndex) => {
     for (const key of keys) {
       const keyValue = record[key];
-      if (keyValue === undefined) {
+      if (keyValue === undefined || keyValue === null) {
         const absoluteIndex = batchStartIndex + recordIndex;
         throw new Error(
-          `Key field '${key}' is missing in ${operationType} object at index ${absoluteIndex}. Record: ${JSON.stringify(record).slice(0, 200)}`,
+          `Key field '${key}' is missing or null in ${operationType} object at index ${absoluteIndex}. ` +
+            `Ensure all ${operationType} objects include the required key field(s).`,
         );
       }
     }

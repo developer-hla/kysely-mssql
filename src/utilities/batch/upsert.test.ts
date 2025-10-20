@@ -229,7 +229,7 @@ describe('batchUpsert', () => {
       const upserts = [{ name: 'Alice' }] as any;
 
       await expect(batchUpsert(db, 'users', upserts, { key: 'id' })).rejects.toThrow(
-        "Key field 'id' is missing in upsert object",
+        "Key field 'id' is missing or null",
       );
     });
 
@@ -239,7 +239,7 @@ describe('batchUpsert', () => {
       const upserts = [{ name: 'Alice' }] as any;
 
       await expect(batchUpsert(db, 'users', upserts, { key: 'email' })).rejects.toThrow(
-        "Key field 'email' is missing in upsert object",
+        "Key field 'email' is missing or null",
       );
     });
 
@@ -250,7 +250,7 @@ describe('batchUpsert', () => {
 
       await expect(
         batchUpsert(db, 'posts', upserts, { key: ['userId', 'status'] }),
-      ).rejects.toThrow("Key field 'status' is missing in upsert object");
+      ).rejects.toThrow("Key field 'status' is missing or null");
     });
 
     it('should validate key fields for all records in batch', async () => {
@@ -262,7 +262,7 @@ describe('batchUpsert', () => {
       ] as any;
 
       await expect(batchUpsert(db, 'users', upserts, { key: 'id' })).rejects.toThrow(
-        "Key field 'id' is missing in upsert object",
+        "Key field 'id' is missing or null",
       );
     });
   });

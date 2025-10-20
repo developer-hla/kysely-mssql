@@ -186,7 +186,7 @@ describe('batchUpdate', () => {
       const updates = [{ name: 'Alice' }] as any;
 
       await expect(batchUpdate(db, 'users', updates, { key: 'id' })).rejects.toThrow(
-        "Key field 'id' is missing in update object",
+        "Key field 'id' is missing or null",
       );
     });
 
@@ -196,7 +196,7 @@ describe('batchUpdate', () => {
       const updates = [{ name: 'Alice' }] as any;
 
       await expect(batchUpdate(db, 'users', updates, { key: 'email' })).rejects.toThrow(
-        "Key field 'email' is missing in update object",
+        "Key field 'email' is missing or null",
       );
     });
 
@@ -207,7 +207,7 @@ describe('batchUpdate', () => {
 
       await expect(
         batchUpdate(db, 'posts', updates, { key: ['userId', 'status'] }),
-      ).rejects.toThrow("Key field 'status' is missing in update object");
+      ).rejects.toThrow("Key field 'status' is missing or null");
     });
 
     it('should validate key fields for all records in batch', async () => {
@@ -219,7 +219,7 @@ describe('batchUpdate', () => {
       ] as any;
 
       await expect(batchUpdate(db, 'users', updates, { key: 'id' })).rejects.toThrow(
-        "Key field 'id' is missing in update object",
+        "Key field 'id' is missing or null",
       );
     });
   });
