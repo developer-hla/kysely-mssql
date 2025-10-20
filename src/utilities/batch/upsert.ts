@@ -1,4 +1,5 @@
 import type { Insertable, Kysely, Transaction } from 'kysely';
+import { type BatchResult, withAutoTransaction } from './batch-kysely.js';
 import { calculateOptimalBatchSize, createValuesSource, validateKeyFields } from './shared.js';
 
 /**
@@ -25,6 +26,10 @@ export interface BatchUpsertOptions<K extends string = string> {
  * If no match exists, it inserts a new row. Uses SQL Server's MERGE statement for
  * optimal bulk upsert performance.
  *
+ * **Atomic by default:** The entire operation is automatically wrapped in a transaction.
+ * If any batch fails, ALL batches are rolled back (all-or-nothing). If called within
+ * an existing transaction, uses that transaction (no nesting).
+ *
  * Automatically calculates the optimal batch size based on SQL Server's 2100 parameter
  * limit and the number of columns in your records to maximize performance.
  *
@@ -32,14 +37,15 @@ export interface BatchUpsertOptions<K extends string = string> {
  * @param table - Table name to upsert into
  * @param values - Array of records to upsert (must include key field(s)). **Empty array is a no-op** (returns immediately).
  * @param options - Configuration with **required** `key` field
+ * @returns Metadata about the batch operation
  *
  * @throws {Error} When a key field is missing from an upsert object
- * @throws {Error} Propagates any database errors from the MERGE operation
+ * @throws {Error} Propagates any database errors (entire operation rolls back)
  *
  * @remarks
  * **Edge Cases:**
  * - Empty array: Returns immediately without executing any queries
- * - Single record: Executes a single MERGE statement
+ * - Single record: Executes a single MERGE statement (still atomic)
  * - Missing key field: Throws error immediately when detected during validation
  * - Automatic batch sizing: Calculates optimal size based on column count
  *
@@ -53,14 +59,14 @@ export interface BatchUpsertOptions<K extends string = string> {
  * - 50 columns → batch size 40 (2000 parameters)
  *
  * @example
- * Basic usage with automatic batch sizing:
+ * Basic usage (atomic by default):
  * ```typescript
- * await batchUpsert(db, 'products', [
+ * const result = await batchUpsert(db, 'products', [
  *   { id: 1, name: 'Product 1', price: 19.99 },
  *   { id: 999, name: 'New Product', price: 39.99 }
  * ], { key: 'id' });
  * // Updates product 1 if exists, inserts product 999
- * // Automatically calculates optimal batch size
+ * console.log(`Upserted ${result.totalRecords} records in ${result.batchCount} batches`);
  * ```
  *
  * @example
@@ -73,11 +79,12 @@ export interface BatchUpsertOptions<K extends string = string> {
  * ```
  *
  * @example
- * Within a transaction:
+ * Within an explicit transaction:
  * ```typescript
  * await db.transaction().execute(async (tx) => {
  *   await batchUpsert(tx, 'products', productUpdates, { key: 'productId' });
  *   await batchUpsert(tx, 'inventory', inventoryUpdates, { key: 'sku' });
+ *   // All upserts use the same transaction - atomic across both tables
  * });
  * ```
  */
@@ -90,80 +97,92 @@ export async function batchUpsert<
   table: TB,
   values: readonly Insertable<DB[TB]>[],
   options: BatchUpsertOptions<K>,
-): Promise<void> {
+): Promise<BatchResult> {
   if (values.length === 0) {
-    return;
+    return { totalRecords: 0, batchCount: 0 };
   }
 
-  const keyOption = options.key;
-  const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
+  return withAutoTransaction(executor, async (tx) => {
+    const keyOption = options.key;
+    const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
 
-  const batchSize = calculateOptimalBatchSize(values as readonly Record<string, unknown>[]);
+    const batchSize = calculateOptimalBatchSize(values as readonly Record<string, unknown>[]);
+    let batchCount = 0;
 
-  for (let i = 0; i < values.length; i += batchSize) {
-    const batch = values.slice(i, i + batchSize);
-    const typedBatch = batch as Record<string, unknown>[];
+    for (let i = 0; i < values.length; i += batchSize) {
+      const batch = values.slice(i, i + batchSize);
+      const typedBatch = batch as Record<string, unknown>[];
 
-    // Validate that all records have the required key fields
-    validateKeyFields(typedBatch, keys, i, 'upsert');
+      // Validate that all records have the required key fields
+      validateKeyFields(typedBatch, keys, i, 'upsert');
 
-    const allColumns = Object.keys(typedBatch[0]) as (keyof DB[TB] & string)[];
-    const updateColumns = allColumns.filter((col) => !keys.includes(col as K));
-    const valuesSource = createValuesSource(typedBatch, 'source');
+      const allColumns = Object.keys(typedBatch[0]) as (keyof DB[TB] & string)[];
+      const updateColumns = allColumns.filter((col) => !keys.includes(col as K));
+      const valuesSource = createValuesSource(typedBatch, 'source');
 
-    if (keys.length === 1) {
-      const key = keys[0];
+      if (keys.length === 1) {
+        const key = keys[0];
 
-      await executor
-        .mergeInto(table)
-        // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
-        .using(valuesSource as any, `source.${key}` as any, `${table}.${key}` as any)
-        .whenMatched()
-        // Type assertion required: Dynamic column references in UPDATE SET clause
-        .thenUpdateSet((eb: any) => {
-          const updates: Partial<Record<string, unknown>> = {};
-          for (const col of updateColumns) {
-            updates[col] = eb.ref(`source.${col}`);
-          }
-          return updates as any;
-        })
-        .whenNotMatched()
-        // Type assertion required: Dynamic column references in INSERT VALUES clause
-        .thenInsertValues((eb: any) => {
-          const inserts: Partial<Record<string, unknown>> = {};
-          for (const col of allColumns) {
-            inserts[col] = eb.ref(`source.${col}`);
-          }
-          return inserts as any;
-        })
-        .execute();
-    } else {
-      await executor
-        .mergeInto(table)
-        // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
-        .using(valuesSource as any, (eb: any) => {
-          const conditions = keys.map((key) => eb(`source.${key}`, '=', eb.ref(`${table}.${key}`)));
-          return eb.and(conditions);
-        })
-        .whenMatched()
-        // Type assertion required: Dynamic column references in UPDATE SET clause
-        .thenUpdateSet((eb: any) => {
-          const updates: Partial<Record<string, unknown>> = {};
-          for (const col of updateColumns) {
-            updates[col] = eb.ref(`source.${col}`);
-          }
-          return updates as any;
-        })
-        .whenNotMatched()
-        // Type assertion required: Dynamic column references in INSERT VALUES clause
-        .thenInsertValues((eb: any) => {
-          const inserts: Partial<Record<string, unknown>> = {};
-          for (const col of allColumns) {
-            inserts[col] = eb.ref(`source.${col}`);
-          }
-          return inserts as any;
-        })
-        .execute();
+        await tx
+          .mergeInto(table)
+          // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
+          .using(valuesSource as any, `source.${key}` as any, `${table}.${key}` as any)
+          .whenMatched()
+          // Type assertion required: Dynamic column references in UPDATE SET clause
+          .thenUpdateSet((eb: any) => {
+            const updates: Partial<Record<string, unknown>> = {};
+            for (const col of updateColumns) {
+              updates[col] = eb.ref(`source.${col}`);
+            }
+            return updates as any;
+          })
+          .whenNotMatched()
+          // Type assertion required: Dynamic column references in INSERT VALUES clause
+          .thenInsertValues((eb: any) => {
+            const inserts: Partial<Record<string, unknown>> = {};
+            for (const col of allColumns) {
+              inserts[col] = eb.ref(`source.${col}`);
+            }
+            return inserts as any;
+          })
+          .execute();
+      } else {
+        await tx
+          .mergeInto(table)
+          // Type assertion required: Kysely's MERGE types don't support dynamic table references from VALUES
+          .using(valuesSource as any, (eb: any) => {
+            const conditions = keys.map((key) =>
+              eb(`source.${key}`, '=', eb.ref(`${table}.${key}`)),
+            );
+            return eb.and(conditions);
+          })
+          .whenMatched()
+          // Type assertion required: Dynamic column references in UPDATE SET clause
+          .thenUpdateSet((eb: any) => {
+            const updates: Partial<Record<string, unknown>> = {};
+            for (const col of updateColumns) {
+              updates[col] = eb.ref(`source.${col}`);
+            }
+            return updates as any;
+          })
+          .whenNotMatched()
+          // Type assertion required: Dynamic column references in INSERT VALUES clause
+          .thenInsertValues((eb: any) => {
+            const inserts: Partial<Record<string, unknown>> = {};
+            for (const col of allColumns) {
+              inserts[col] = eb.ref(`source.${col}`);
+            }
+            return inserts as any;
+          })
+          .execute();
+      }
+
+      batchCount++;
     }
-  }
+
+    return {
+      totalRecords: values.length,
+      batchCount,
+    };
+  });
 }

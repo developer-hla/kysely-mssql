@@ -67,7 +67,10 @@ export type { Executor } from './types.js';
 // ===== UTILITIES =====
 export {
   addQueryHint,
-  type BatchInsertOptions,
+  type BatchKysely,
+  type BatchMethods,
+  type BatchResult,
+  type BatchTransaction,
   type BatchUpdateOptions,
   type BatchUpsertOptions,
   batchInsert,

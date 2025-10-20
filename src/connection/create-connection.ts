@@ -2,14 +2,17 @@ import type { Dialect } from 'kysely';
 import { Kysely, MssqlDialect } from 'kysely';
 import tarn from 'tarn';
 import * as tedious from 'tedious';
-
 import { createLogger } from '../logging/index.js';
 import { createQueryOriginPlugin } from '../plugins/index.js';
 import { Request, TEDIOUS_TYPE_UNICODE_OVERWRITES } from '../tedious/index.js';
+import { type BatchKysely, createBatchAwareKysely } from '../utilities/batch/batch-kysely.js';
+import { batchInsert } from '../utilities/batch/insert.js';
+import { batchUpdate } from '../utilities/batch/update.js';
+import { batchUpsert } from '../utilities/batch/upsert.js';
 import type { ConnectionConfig } from './types.js';
 
 /**
- * Creates a Kysely database connection with opinionated defaults.
+ * Creates a Kysely database connection with opinionated defaults and batch operation support.
  *
  * This function sets up a complete Kysely instance with:
  * - QueryOriginPlugin for automatic caller tracking in SQL comments
@@ -17,9 +20,12 @@ import type { ConnectionConfig } from './types.js';
  * - Tedious type overwrites for VarChar performance optimization
  * - Sensible connection pooling defaults
  * - Configurable logging
+ * - **Batch operations** (batchInsert, batchUpdate, batchUpsert) for bulk data operations
+ *
+ * All batch operations are automatically atomic - wrapped in transactions for all-or-nothing behavior.
  *
  * @param config - Connection configuration
- * @returns A fully configured Kysely database instance
+ * @returns A fully configured Kysely database instance with batch operation methods
  *
  * @example
  * Basic usage:
@@ -43,6 +49,10 @@ import type { ConnectionConfig } from './types.js';
  * // All queries now include caller tracking:
  * const users = await db.selectFrom('users').selectAll().execute();
  * // SQL: /\* caller: getUserList *\/ SELECT * FROM users
+ *
+ * // Batch operations are available on all connections:
+ * const result = await db.batchInsert('users', largeUserArray);
+ * console.log(`Inserted ${result.totalRecords} records in ${result.batchCount} batches`);
  * ```
  *
  * @example
@@ -78,7 +88,7 @@ import type { ConnectionConfig } from './types.js';
  * });
  * ```
  */
-export function createConnection<DB>(config: ConnectionConfig): Kysely<DB> {
+export function createConnection<DB>(config: ConnectionConfig): BatchKysely<DB> {
   if (!config.appName) {
     throw new Error(
       'ConnectionConfig.appName is required. ' +
@@ -149,9 +159,16 @@ export function createConnection<DB>(config: ConnectionConfig): Kysely<DB> {
 
   const logger = config.customLogger ?? createLogger(logLevels);
 
-  return new Kysely<DB>({
+  const kysely = new Kysely<DB>({
     dialect: finalDialect,
     log: logger,
     plugins,
+  });
+
+  // Wrap with batch operation support
+  return createBatchAwareKysely(kysely, {
+    batchInsert,
+    batchUpdate,
+    batchUpsert,
   });
 }
