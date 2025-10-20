@@ -64,18 +64,27 @@ export {
 export { createLogger, type LogLevel } from './logging/index.js';
 export type { Executor } from './types.js';
 
-// ===== UTILITIES =====
+// ===== BATCH OPERATIONS =====
+// All batch operations are available as instance methods on the BatchKysely<DB>
+// instance returned from createConnection():
+//   - db.batchInsert(table, values)
+//   - db.batchUpdate(table, values, { key: ... })
+//   - db.batchUpsert(table, values, { key: ... })
+//
+// These methods automatically calculate optimal batch sizes and wrap operations
+// in transactions for atomic all-or-nothing behavior.
 export {
-  addQueryHint,
   type BatchKysely,
   type BatchMethods,
   type BatchResult,
   type BatchTransaction,
   type BatchUpdateOptions,
   type BatchUpsertOptions,
-  batchInsert,
-  batchUpdate,
-  batchUpsert,
+} from './utilities/index.js';
+
+// ===== UTILITIES =====
+export {
+  addQueryHint,
   buildSearchFilter,
   callStoredProcedure,
   createCrossDbHelper,

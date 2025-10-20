@@ -220,14 +220,30 @@ export function createBatchAwareKysely<DB>(
 
       // Special handling for transaction() to wrap the returned Transaction
       if (prop === 'transaction' && typeof target[prop] === 'function') {
-        return () => ({
-          execute: async (callback: (tx: BatchTransaction<DB>) => Promise<any>) => {
-            return target.transaction().execute(async (tx) => {
-              const batchTx = createBatchAwareKysely(tx, batchFunctions) as BatchTransaction<DB>;
-              return callback(batchTx);
-            });
-          },
-        });
+        return () => {
+          const transactionBuilder = target.transaction();
+
+          // Proxy the TransactionBuilder to wrap the execute method
+          return new Proxy(transactionBuilder, {
+            get(builderTarget, builderProp) {
+              if (builderProp === 'execute') {
+                return async (callback: (tx: BatchTransaction<DB>) => Promise<any>) => {
+                  return builderTarget.execute(async (tx) => {
+                    const batchTx = createBatchAwareKysely(tx, batchFunctions) as BatchTransaction<DB>;
+                    return callback(batchTx);
+                  });
+                };
+              }
+
+              // Forward all other TransactionBuilder methods (setIsolationLevel, etc.)
+              const value = Reflect.get(builderTarget, builderProp);
+              if (typeof value === 'function') {
+                return value.bind(builderTarget);
+              }
+              return value;
+            },
+          });
+        };
       }
 
       // Forward everything else to underlying Kysely/Transaction

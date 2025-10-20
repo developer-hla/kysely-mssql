@@ -38,8 +38,7 @@ SQL Server errors are automatically mapped to TypeScript exception classes:
 - **`createCrossDbHelper`**: Type-safe cross-database joins with automatic schema handling
 - **`deduplicateJoins`**: Automatically remove duplicate joins from dynamic queries
 - **`buildSearchFilter`**: Multi-column LIKE search with OR logic and wildcard escaping
-- **`batchInsert`**: Bulk insert records in batches to avoid SQL Server parameter limits
-- **`batchUpdate`**: Bulk update records in batches with single or composite key support
+- **Batch Operations**: `db.batchInsert()`, `db.batchUpdate()`, `db.batchUpsert()` available on every connection with automatic sizing and transaction safety
 
 ### Smart Logging
 Configurable logging with query and error levels. Integrate with your logging framework (pino, winston, etc.).
@@ -138,6 +137,28 @@ const db = createConnection<Database>({
       logger.error({ err: event.error }, 'Query error');
     }
   },
+});
+```
+
+---
+
+## Important: Automatic Transactions in Batch Operations
+
+All batch operations (`db.batchInsert`, `db.batchUpdate`, `db.batchUpsert`) are **automatically wrapped in transactions** for atomic all-or-nothing behavior.
+
+**What this means:**
+- **Data integrity guaranteed** - Failed batches automatically rollback
+- **Safe by default** - Production-ready out of the box
+- **No extra code needed** - Transactions happen automatically
+- **Small overhead** - For single-record operations, use regular `.insertInto()` instead
+
+**Within existing transactions:**
+```typescript
+await db.transaction().execute(async (tx) => {
+  await tx.batchInsert('users', users);           // Reuses transaction
+  await tx.batchUpdate('posts', updates, { key: 'id' }); // Same transaction
+  await tx.batchUpsert('products', products, { key: 'sku' }); // Same transaction
+  // All operations succeed together or all rollback together
 });
 ```
 
@@ -608,11 +629,11 @@ const result = await paginateQuery(query, { page: 1, limit: 20 });
 
 ### 10. Bulk Operations
 
-Insert large datasets efficiently in batches to avoid SQL Server parameter limits:
+Insert, update, and upsert large datasets efficiently with automatic batch sizing and transaction safety.
+
+#### Batch Insert
 
 ```typescript
-import { batchInsert } from '@dev-hla/kysely-mssql';
-
 // Basic usage: insert 10,000 products in batches
 const products = Array.from({ length: 10000 }, (_, i) => ({
   name: `Product ${i}`,
@@ -620,28 +641,23 @@ const products = Array.from({ length: 10000 }, (_, i) => ({
   sku: `SKU-${i}`,
 }));
 
-await batchInsert(db, 'products', products);
-// Automatically splits into batches of 1000 (default)
-// Executes 10 INSERT statements
+const result = await db.batchInsert('products', products);
+console.log(`Inserted ${result.totalRecords} products in ${result.batchCount} batches`);
+// Example output: "Inserted 10000 products in 10 batches"
 
-// Custom batch size for parameter-heavy records
-const largeRecords = [...]; // Records with many columns
-
-await batchInsert(db, 'large_table', largeRecords, { batchSize: 500 });
-// Reduces parameter count per query to stay within SQL Server's 2100 limit
-
-// Within a transaction (all batches atomic)
+// Within an existing transaction (all batches atomic)
 await db.transaction().execute(async (tx) => {
-  await batchInsert(tx, 'users', users);
-  await batchInsert(tx, 'user_profiles', profiles);
+  const userResult = await tx.batchInsert('users', users);
+  const profileResult = await tx.batchInsert('user_profiles', profiles);
 
-  // All batches succeed or all rollback
+  console.log(`Inserted ${userResult.totalRecords} users and ${profileResult.totalRecords} profiles`);
+  // All batches succeed or all rollback together
 });
 
 // With error handling
 try {
-  await batchInsert(db, 'products', products, { batchSize: 1000 });
-  console.log(`Successfully inserted ${products.length} products`);
+  const result = await db.batchInsert('products', products);
+  console.log(`Successfully inserted ${result.totalRecords} products`);
 } catch (error) {
   if (error instanceof DuplicateKeyError) {
     console.error('Some products already exist');
@@ -650,39 +666,50 @@ try {
 }
 ```
 
-**Why Use Batching?**
+**How Automatic Batch Sizing Works:**
 
-SQL Server has a parameter limit of 2100 per query. A single INSERT with many records and columns can easily exceed this:
+The package automatically calculates the optimal batch size based on SQL Server's 2100 parameter limit:
 
 ```typescript
-// Without batching (can fail with large datasets):
-// 1000 records × 20 columns = 20,000 parameters (exceeds limit!)
+// Your record structure determines batch size:
+// 2 columns  → 1000 records per batch (2000 parameters)
+// 10 columns → 200 records per batch (2000 parameters)
+// 50 columns → 40 records per batch (2000 parameters)
+
+// You don't need to think about this - it just works!
+```
+
+**Why Use Batching?**
+
+SQL Server has a parameter limit of 2100 per query. A single INSERT can easily exceed this:
+
+```typescript
+// Without batching (can fail):
+// 1000 records × 20 columns = 20,000 parameters - Exceeds limit!
 await db.insertInto('products').values(largeArray).execute(); // Error!
 
 // With batching (safe):
-// 500 records × 20 columns = 10,000 parameters per batch (safe)
-await batchInsert(db, 'products', largeArray, { batchSize: 500 }); // Success!
+await db.batchInsert('products', largeArray);
+// Automatically calculates: floor(2000 / 20) = 100 records per batch
 ```
 
 **Performance Benefits:**
-- Reduces round-trips vs individual inserts
+- Reduces round-trips vs individual inserts (100x-1000x faster)
 - Stays within parameter limits automatically
 - Optimizes batch size for your data shape
-- Works with transaction guarantees
+- Automatic transaction safety (all-or-nothing)
 
 **When to Use:**
-- Bulk imports from external sources
+- Bulk imports from external sources (CSV, API, etc.)
 - Data migrations
 - Batch processing jobs
 - Any scenario inserting hundreds or thousands of records
 
-#### Batch Updates
+#### Batch Update
 
-Update large datasets efficiently in batches:
+Update large datasets efficiently using SQL Server's MERGE statement:
 
 ```typescript
-import { batchUpdate } from '@dev-hla/kysely-mssql';
-
 // Basic usage: update 5,000 product prices
 const updates = [
   { id: 1, price: 19.99, stock: 50 },
@@ -690,12 +717,9 @@ const updates = [
   // ... 5,000 more updates
 ];
 
-await batchUpdate(db, 'products', updates, { key: 'id' });
-// Automatically batches updates (default: 1000 per batch)
-// Each record: UPDATE products SET price=@1, stock=@2 WHERE id=@3
-
-// Custom batch size for performance tuning
-await batchUpdate(db, 'users', userUpdates, { key: 'id', batchSize: 500 });
+const result = await db.batchUpdate('products', updates, { key: 'id' });
+console.log(`Updated ${result.totalRecords} products in ${result.batchCount} batches`);
+// Uses SQL Server MERGE for bulk updates (much faster than individual UPDATEs)
 
 // Custom key field
 const updates = [
@@ -703,8 +727,8 @@ const updates = [
   { email: 'user2@example.com', status: 'inactive' },
 ];
 
-await batchUpdate(db, 'users', updates, { key: 'email' });
-// UPDATE users SET status=@1 WHERE email=@2
+await db.batchUpdate('users', updates, { key: 'email' });
+// MERGE statement: SET status = source.status WHERE email = source.email
 
 // Composite keys for multi-column matching
 const updates = [
@@ -713,23 +737,24 @@ const updates = [
   { userType: 'guest', active: false, permissions: 'read' },
 ];
 
-await batchUpdate(db, 'user_settings', updates, {
+await db.batchUpdate('user_settings', updates, {
   key: ['userType', 'active']
 });
-// UPDATE user_settings SET permissions=@1 WHERE userType=@2 AND active=@3
+// MERGE with multiple key columns: WHERE userType = source.userType AND active = source.active
 
 // Within a transaction (all batches atomic)
 await db.transaction().execute(async (tx) => {
-  await batchUpdate(tx, 'products', productUpdates, { key: 'id' });
-  await batchUpdate(tx, 'inventory', inventoryUpdates, { key: 'id' });
+  const productResult = await tx.batchUpdate('products', productUpdates, { key: 'id' });
+  const inventoryResult = await tx.batchUpdate('inventory', inventoryUpdates, { key: 'id' });
 
-  // All batches succeed or all rollback
+  console.log(`Updated ${productResult.totalRecords} products and ${inventoryResult.totalRecords} inventory items`);
+  // All batches succeed or all rollback together
 });
 
 // With error handling
 try {
-  await batchUpdate(db, 'products', updates, { key: 'id', batchSize: 1000 });
-  console.log(`Successfully updated ${updates.length} products`);
+  const result = await db.batchUpdate('products', updates, { key: 'id' });
+  console.log(`Successfully updated ${result.totalRecords} products`);
 } catch (error) {
   if (error instanceof ForeignKeyError) {
     console.error('Some updates reference invalid foreign keys');
@@ -739,10 +764,11 @@ try {
 ```
 
 **Key Features:**
+- Uses SQL Server MERGE statement (true bulk operations, not individual UPDATEs)
 - Single key field support (must be explicitly specified)
 - Composite key support (multiple WHERE conditions)
-- Automatic batching to manage query load
-- Transaction support for atomic operations
+- Automatic batch sizing based on record structure
+- Automatic transaction safety (all-or-nothing)
 - Validates that key fields are present in each update object
 
 **When to Use:**
@@ -832,8 +858,8 @@ const db = createConnection<Database>({
 // - Cross-database join helper included
 // - Deduplicate joins helper included
 // - Search filter helper included
-// - Batch insert helper included
-// - Batch update helper included
+// - Batch operations: db.batchInsert(), db.batchUpdate(), db.batchUpsert()
+//   (automatic sizing, transaction safety, returns metadata)
 // - Sensible defaults for everything
 ```
 
@@ -841,9 +867,14 @@ const db = createConnection<Database>({
 
 ## API Reference
 
-### `createConnection<DB>(config: ConnectionConfig): Kysely<DB>`
+### `createConnection<DB>(config: ConnectionConfig): BatchKysely<DB>`
 
-Creates a Kysely database connection with all customizations included.
+Creates a Kysely database connection with all customizations and batch operation methods included.
+
+**Returns:** `BatchKysely<DB>` - A Kysely instance with additional batch operation methods:
+- `db.batchInsert(table, values)` - Bulk insert with automatic sizing
+- `db.batchUpdate(table, values, { key })` - Bulk update with MERGE
+- `db.batchUpsert(table, values, { key })` - Bulk upsert with MERGE
 
 **Required Parameters:**
 - `server: string` - Database server hostname or IP
@@ -1079,100 +1110,121 @@ if (searchTerm) {
 }
 ```
 
-### `batchInsert<DB, TB>(executor, table, values, options?): Promise<void>`
+### Batch Operation Methods (on db instance)
 
-Insert records in batches to avoid SQL Server parameter limits.
+All batch operations are available directly on the `BatchKysely<DB>` instance returned from `createConnection()`.
 
-**Type Parameters:**
-- `DB` - Database schema type
-- `TB` - Table name
+---
+
+### `db.batchInsert<TB>(table, values): Promise<BatchResult>`
+
+Insert records in batches with automatic sizing and transaction safety.
 
 **Parameters:**
-- `executor: Kysely<DB> | Transaction<DB>` - Database or transaction instance
 - `table: TB` - Table name to insert into
 - `values: readonly Insertable<DB[TB]>[]` - Array of records to insert
-- `options?: BatchInsertOptions` - Optional batch configuration
 
-**BatchInsertOptions:**
-- `batchSize?: number` - Records per batch (default: 1000)
+**Returns:** `Promise<BatchResult>` with metadata:
+```typescript
+{
+  totalRecords: number;  // Total number of records processed
+  batchCount: number;    // Number of database round trips
+}
+```
 
-**Returns:** Promise<void>
+**Key Features:**
+- Automatic batch sizing based on SQL Server's 2100 parameter limit
+- Automatic transaction wrapping (all-or-nothing)
+- Optimal performance (maximizes records per batch)
 
-**Why Use This:**
-SQL Server has a parameter limit of 2100. With many columns or records, you can easily exceed this limit. This function automatically chunks your inserts into safe batches.
+**Example:**
+```typescript
+const result = await db.batchInsert('products', largeProductArray);
+console.log(`Inserted ${result.totalRecords} products in ${result.batchCount} batches`);
+
+// Within an existing transaction
+await db.transaction().execute(async (tx) => {
+  const userResult = await tx.batchInsert('users', users);
+  const profileResult = await tx.batchInsert('profiles', profiles);
+  console.log(`Inserted ${userResult.totalRecords} users and ${profileResult.totalRecords} profiles`);
+});
+```
+
+---
+
+### `db.batchUpdate<TB>(table, values, options): Promise<BatchResult>`
+
+Update records in batches using SQL Server's MERGE statement.
+
+**Parameters:**
+- `table: TB` - Table name to update
+- `values: readonly Updateable<DB[TB]>[]` - Array of records to update
+- `options: BatchUpdateOptions` - **Required** configuration with key field(s)
+
+**BatchUpdateOptions:**
+- `key: string | readonly string[]` - **Required** column name(s) for WHERE clause (single or composite keys)
+
+**Returns:** `Promise<BatchResult>` with metadata:
+```typescript
+{
+  totalRecords: number;  // Total number of records processed
+  batchCount: number;    // Number of database round trips
+}
+```
+
+**Key Features:**
+- Uses SQL Server MERGE statement (true bulk operations, not individual UPDATEs)
+- Single and composite key support
+- Automatic batch sizing and transaction safety
+- Validates key fields are present in each record
 
 **Example:**
 ```typescript
 // Basic usage
-const products = Array.from({ length: 10000 }, (_, i) => ({
-  name: `Product ${i}`,
-  price: 10.99,
-}));
+const result = await db.batchUpdate('products', updates, { key: 'id' });
+console.log(`Updated ${result.totalRecords} products`);
 
-await batchInsert(db, 'products', products);
-// Executes 10 INSERT statements of 1000 records each
+// Custom key field
+await db.batchUpdate('users', updates, { key: 'email' });
 
-// Custom batch size
-await batchInsert(db, 'products', products, { batchSize: 500 });
+// Composite keys
+await db.batchUpdate('user_settings', updates, {
+  key: ['userType', 'active']
+});
 
-// Within a transaction
+// Within an existing transaction
 await db.transaction().execute(async (tx) => {
-  await batchInsert(tx, 'users', users);
-  await batchInsert(tx, 'profiles', profiles);
-  // All batches are atomic
+  const productResult = await tx.batchUpdate('products', productUpdates, { key: 'id' });
+  const inventoryResult = await tx.batchUpdate('inventory', inventoryUpdates, { key: 'id' });
+  console.log(`Updated ${productResult.totalRecords} products and ${inventoryResult.totalRecords} inventory items`);
 });
 ```
 
-### `batchUpdate<DB, TB>(executor, table, values, options): Promise<void>`
+---
 
-Update records in batches with single or composite key support.
+### `db.batchUpsert<TB>(table, values, options): Promise<BatchResult>`
 
-**Type Parameters:**
-- `DB` - Database schema type
-- `TB` - Table name
+Upsert records in batches using SQL Server's MERGE statement (insert if not exists, update if exists).
 
 **Parameters:**
-- `executor: Kysely<DB> | Transaction<DB>` - Database or transaction instance
-- `table: TB` - Table name to update
-- `values: readonly Updateable<DB[TB]>[]` - Array of records to update
-- `options: BatchUpdateOptions` - **Required** batch configuration
+- `table: TB` - Table name to upsert into
+- `values: readonly Insertable<DB[TB]>[]` - Array of records to upsert
+- `options: BatchUpsertOptions` - **Required** configuration with key field(s)
 
-**BatchUpdateOptions:**
-- `batchSize?: number` - Records per batch (default: 1000)
-- `key: string | readonly string[]` - **Required** column name(s) for WHERE clause
+**BatchUpsertOptions:**
+- `key: string | readonly string[]` - **Required** column name(s) for matching existing records
 
-**Returns:** Promise<void>
+**Returns:** `Promise<BatchResult>` with metadata
 
-**How It Works:**
-Each record must include the key field(s). The function extracts key values for the WHERE clause and uses remaining fields for the SET clause. Supports both single key fields and composite keys for complex matching.
+**Key Features:**
+- Insert new records or update existing ones in a single operation
+- Uses SQL Server MERGE statement
+- Automatic batch sizing and transaction safety
 
 **Example:**
 ```typescript
-// Basic usage with explicit key
-const updates = [
-  { id: 1, price: 19.99, stock: 50 },
-  { id: 2, price: 29.99, stock: 30 },
-];
-
-await batchUpdate(db, 'products', updates, { key: 'id' });
-// UPDATE products SET price=@1, stock=@2 WHERE id=@3
-
-// Custom single key
-await batchUpdate(db, 'users', updates, { key: 'email' });
-// UPDATE users SET status=@1 WHERE email=@2
-
-// Composite key
-await batchUpdate(db, 'user_settings', updates, {
-  key: ['userType', 'active']
-});
-// UPDATE user_settings SET permissions=@1 WHERE userType=@2 AND active=@3
-
-// Within a transaction
-await db.transaction().execute(async (tx) => {
-  await batchUpdate(tx, 'products', productUpdates, { key: 'id' });
-  await batchUpdate(tx, 'inventory', inventoryUpdates, { key: 'id' });
-  // All batches are atomic
-});
+const result = await db.batchUpsert('products', products, { key: 'sku' });
+console.log(`Upserted ${result.totalRecords} products`);
 ```
 
 ---
@@ -1196,65 +1248,6 @@ This is **critical** for:
 - Performance monitoring (which app has slow queries?)
 - Connection tracking (how many connections per service?)
 - Incident response (which service triggered the issue?)
-
----
-
-## Migration Guide
-
-### From Plain Kysely
-
-Replace your Kysely setup:
-
-**Before:**
-```typescript
-import { Kysely, MssqlDialect } from 'kysely';
-// ... manual dialect configuration
-
-const db = new Kysely<Database>({ dialect });
-```
-
-**After:**
-```typescript
-import { createConnection } from '@dev-hla/kysely-mssql';
-
-const db = createConnection<Database>({
-  server: 'localhost',
-  database: 'MyDB',
-  user: 'sa',
-  password: 'password',
-  appName: 'my-app', // Add this!
-});
-```
-
-### From Custom Request Pattern
-
-If you're using a custom Request class with error mapping:
-
-**Before:**
-```typescript
-// Custom Request class setup
-// Custom error mapper
-// Manual dialect configuration
-// ... lots of boilerplate
-
-export const database = new Kysely<Database>({ dialect });
-```
-
-**After:**
-```typescript
-import { createConnection } from '@dev-hla/kysely-mssql';
-
-export const database = createConnection<Database>({
-  server: process.env.DB_SERVER!,
-  database: process.env.DB_NAME!,
-  user: process.env.DB_USER!,
-  password: process.env.DB_PASSWORD!,
-  appName: 'my-api',
-  logLevels: ['error'], // Production
-});
-
-// All your custom error classes and request handling work automatically!
-```
 
 ---
 
