@@ -17,41 +17,65 @@ export const DEFAULT_BATCH_SIZE = 1000;
  * Calculates the optimal batch size based on SQL Server's parameter limit.
  *
  * SQL Server has a limit of 2100 parameters per query. This function calculates
- * the maximum safe batch size based on the number of columns in each record.
+ * the maximum safe batch size based on the number of columns in the records.
  *
- * @param recordShape - A sample record to determine column count
+ * @param records - Array of records to analyze for column count
  * @returns The optimal batch size that won't exceed SQL Server's parameter limit
+ *
+ * @throws {Error} When records array is empty or contains empty objects
  *
  * @remarks
  * **How it works:**
- * - Parameters per batch = batchSize × columnCount
- * - Safe batch size = floor(2000 / columnCount)
+ * - Finds the maximum column count across all records (handles sparse/heterogeneous data)
+ * - Parameters per batch = batchSize × maxColumnCount
+ * - Safe batch size = floor(2000 / maxColumnCount)
  * - Automatically uses the largest safe batch size for optimal performance
  *
+ * **Heterogeneous records:** If your records have different column counts (e.g., optional fields),
+ * this function calculates based on the record with the MOST columns to ensure safety.
+ *
  * @example
  * ```typescript
- * // Record with 5 columns
- * const record = { id: 1, name: 'A', email: 'a@test.com', age: 25, active: true };
- * const batchSize = calculateOptimalBatchSize(record);
- * // Returns 400 (400 * 5 = 2000 parameters)
+ * // Records with consistent shape
+ * const records = [
+ *   { id: 1, name: 'A', email: 'a@test.com' },
+ *   { id: 2, name: 'B', email: 'b@test.com' }
+ * ];
+ * const batchSize = calculateOptimalBatchSize(records);
+ * // Returns 666 (666 * 3 = 1998 parameters)
  * ```
  *
  * @example
  * ```typescript
- * // Record with 10 columns
- * const record = { col1: 1, col2: 2, ..., col10: 10 };
- * const batchSize = calculateOptimalBatchSize(record);
- * // Returns 200 (200 * 10 = 2000 parameters)
+ * // Records with heterogeneous shape (sparse updates)
+ * const records = [
+ *   { id: 1, name: 'A' },                    // 2 columns
+ *   { id: 2, name: 'B', email: 'b@test.com' } // 3 columns ← determines batch size
+ * ];
+ * const batchSize = calculateOptimalBatchSize(records);
+ * // Returns 666 (based on max 3 columns, not average)
  * ```
  */
-export function calculateOptimalBatchSize(recordShape: Record<string, unknown>): number {
-  const columnCount = Object.keys(recordShape).length;
-
-  if (columnCount === 0) {
-    return DEFAULT_BATCH_SIZE;
+export function calculateOptimalBatchSize(records: readonly Record<string, unknown>[]): number {
+  if (records.length === 0) {
+    throw new Error('Cannot calculate batch size for empty array');
   }
 
-  return Math.floor(SQL_SERVER_SAFE_PARAMETER_LIMIT / columnCount);
+  // Find maximum column count across all records to handle heterogeneous data safely
+  let maxColumnCount = 0;
+  for (const record of records) {
+    const columnCount = Object.keys(record).length;
+
+    if (columnCount === 0) {
+      return DEFAULT_BATCH_SIZE;
+    }
+
+    if (columnCount > maxColumnCount) {
+      maxColumnCount = columnCount;
+    }
+  }
+
+  return Math.floor(SQL_SERVER_SAFE_PARAMETER_LIMIT / maxColumnCount);
 }
 
 /**

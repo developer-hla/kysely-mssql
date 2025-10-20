@@ -98,7 +98,7 @@ export async function batchUpsert<
   const keyOption = options.key;
   const keys = (Array.isArray(keyOption) ? keyOption : [keyOption]) as readonly K[];
 
-  const batchSize = calculateOptimalBatchSize(values[0] as Record<string, unknown>);
+  const batchSize = calculateOptimalBatchSize(values as readonly Record<string, unknown>[]);
 
   for (let i = 0; i < values.length; i += batchSize) {
     const batch = values.slice(i, i + batchSize);
