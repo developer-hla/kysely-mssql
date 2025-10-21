@@ -162,6 +162,22 @@ await db.transaction().execute(async (tx) => {
 });
 ```
 
+### Transaction Isolation Levels
+
+Transaction isolation levels can be set using `.setIsolationLevel()` before calling `.execute()`. The transaction callback will have batch methods available and will use the specified isolation level:
+
+```typescript
+await db.transaction()
+  .setIsolationLevel('serializable')
+  .execute(async (tx) => {
+    // Batch methods available with serializable isolation
+    await tx.batchInsert('users', users);
+    await tx.batchUpdate('products', updates, { key: 'id' });
+  });
+```
+
+Default isolation level is READ COMMITTED (SQL Server default).
+
 ---
 
 ## Core Features
@@ -1248,6 +1264,38 @@ This is **critical** for:
 - Performance monitoring (which app has slow queries?)
 - Connection tracking (how many connections per service?)
 - Incident response (which service triggered the issue?)
+
+---
+
+## How It Works: Batch Methods via Proxy
+
+Batch methods (`batchInsert`, `batchUpdate`, `batchUpsert`) are added to your database connection using JavaScript Proxy. This allows the package to extend Kysely without modifying the original library.
+
+**What this means:**
+- **TypeScript sees the methods** - Full autocomplete and type safety in your IDE
+- **Runtime has the methods** - They work perfectly at runtime
+- **Reflection doesn't show them** - `Object.keys(db)` won't list batch methods (but they exist)
+
+**Why this approach:**
+- No fork of Kysely required
+- No monkey-patching of prototypes
+- Clean separation of concerns
+- Kysely can update independently without breaking changes
+- Same pattern Kysely itself uses for plugins
+
+**Example:**
+```typescript
+const db = createConnection<Database>({...});
+
+// TypeScript knows about batch methods:
+await db.batchInsert('users', data); // Full type safety
+
+// But reflection doesn't show them:
+console.log(Object.keys(db)); // Won't include 'batchInsert'
+console.log('batchInsert' in db); // true - method exists
+
+// This is expected and intentional behavior
+```
 
 ---
 

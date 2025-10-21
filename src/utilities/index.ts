@@ -8,9 +8,8 @@ export type {
   BatchResult,
   BatchTransaction,
 } from './batch/batch-kysely.js';
-export { batchInsert } from './batch/insert.js';
-export { type BatchUpdateOptions, batchUpdate } from './batch/update.js';
-export { type BatchUpsertOptions, batchUpsert } from './batch/upsert.js';
+export type { BatchUpdateOptions } from './batch/update.js';
+export type { BatchUpsertOptions } from './batch/upsert.js';
 export { createCrossDbHelper } from './cross-database.js';
 export { deduplicateJoins } from './deduplicate-joins.js';
 export {

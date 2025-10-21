@@ -107,6 +107,10 @@ export interface BatchMethods<DB> {
  *
  * All batch operations are automatically atomic - wrapped in transactions
  * for all-or-nothing behavior.
+ *
+ * **Important:** Transaction isolation levels can be set via `.setIsolationLevel()`,
+ * but this must be called before `.execute()`. The transaction callback will have
+ * batch methods available and will use the specified isolation level.
  */
 export type BatchKysely<DB> = Kysely<DB> & BatchMethods<DB>;
 
@@ -160,6 +164,72 @@ export async function withAutoTransaction<DB, T>(
 
   // Not in transaction? Wrap it automatically for atomicity
   return executor.transaction().execute(operation);
+}
+
+/**
+ * Creates a proxy around a TransactionBuilder that maintains batch method availability
+ * through method chaining. Kysely's TransactionBuilder is immutable, so methods like
+ * setIsolationLevel() return new instances. This proxy recursively wraps any new
+ * TransactionBuilder instances to maintain the proxy chain.
+ *
+ * @param builder - TransactionBuilder instance to wrap
+ * @param batchFunctions - The batch operation implementations
+ * @returns Proxied TransactionBuilder with batch method support in execute callbacks
+ *
+ * @internal
+ */
+function createTransactionBuilderProxy<DB>(
+  builder: any,
+  batchFunctions: {
+    batchInsert: <TB extends keyof DB & string>(
+      executor: Kysely<DB> | Transaction<DB>,
+      table: TB,
+      values: readonly Insertable<DB[TB]>[],
+    ) => Promise<BatchResult>;
+    batchUpdate: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+      executor: Kysely<DB> | Transaction<DB>,
+      table: TB,
+      values: readonly Updateable<DB[TB]>[],
+      options: { key: K | readonly K[] },
+    ) => Promise<BatchResult>;
+    batchUpsert: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+      executor: Kysely<DB> | Transaction<DB>,
+      table: TB,
+      values: readonly Insertable<DB[TB]>[],
+      options: { key: K | readonly K[] },
+    ) => Promise<BatchResult>;
+  },
+): any {
+  return new Proxy(builder, {
+    get(builderTarget, builderProp) {
+      // Intercept execute to wrap the transaction with batch methods
+      if (builderProp === 'execute') {
+        return async (callback: (tx: BatchTransaction<DB>) => Promise<any>) => {
+          return builderTarget.execute(async (tx: Transaction<DB>) => {
+            const batchTx = createBatchAwareKysely(tx, batchFunctions) as BatchTransaction<DB>;
+            return callback(batchTx);
+          });
+        };
+      }
+
+      // Forward all other TransactionBuilder methods
+      const value = Reflect.get(builderTarget, builderProp);
+      if (typeof value === 'function') {
+        return (...args: any[]) => {
+          const result = value.apply(builderTarget, args);
+
+          // If the result is a TransactionBuilder (has execute), re-proxy it
+          // This handles immutable builders that return new instances
+          if (result && typeof result === 'object' && 'execute' in result) {
+            return createTransactionBuilderProxy<DB>(result, batchFunctions);
+          }
+
+          return result;
+        };
+      }
+      return value;
+    },
+  });
 }
 
 /**
@@ -218,31 +288,11 @@ export function createBatchAwareKysely<DB>(
         return batchMethods[prop as keyof BatchMethods<DB>];
       }
 
-      // Special handling for transaction() to wrap the returned Transaction
+      // Special handling for transaction() to wrap the returned TransactionBuilder
       if (prop === 'transaction' && typeof target[prop] === 'function') {
         return () => {
           const transactionBuilder = target.transaction();
-
-          // Proxy the TransactionBuilder to wrap the execute method
-          return new Proxy(transactionBuilder, {
-            get(builderTarget, builderProp) {
-              if (builderProp === 'execute') {
-                return async (callback: (tx: BatchTransaction<DB>) => Promise<any>) => {
-                  return builderTarget.execute(async (tx) => {
-                    const batchTx = createBatchAwareKysely(tx, batchFunctions) as BatchTransaction<DB>;
-                    return callback(batchTx);
-                  });
-                };
-              }
-
-              // Forward all other TransactionBuilder methods (setIsolationLevel, etc.)
-              const value = Reflect.get(builderTarget, builderProp);
-              if (typeof value === 'function') {
-                return value.bind(builderTarget);
-              }
-              return value;
-            },
-          });
+          return createTransactionBuilderProxy<DB>(transactionBuilder, batchFunctions);
         };
       }
 

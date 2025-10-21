@@ -151,8 +151,12 @@ export function validateKeyFields(
       const keyValue = record[key];
       if (keyValue === undefined || keyValue === null) {
         const absoluteIndex = batchStartIndex + recordIndex;
+        const keyFieldsList = keys.length > 1 ? keys.join(', ') : keys[0];
+        const exampleFields = keys.map((k) => `${k}: <value>`).join(', ');
         throw new Error(
           `Key field '${key}' is missing or null in ${operationType} object at index ${absoluteIndex}. ` +
+            `Each record must include the key field(s): ${keyFieldsList}. ` +
+            `Example: { ${exampleFields}, ...otherFields }. ` +
             `Ensure all ${operationType} objects include the required key field(s).`,
         );
       }
