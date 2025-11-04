@@ -6,7 +6,13 @@
  * are wrapped to include batchInsert, batchUpdate, and batchUpsert methods.
  */
 
-import type { Insertable, Kysely, Transaction, Updateable } from 'kysely';
+import type {
+  Insertable,
+  Kysely,
+  Transaction,
+  TransactionBuilder,
+  Updateable,
+} from 'kysely';
 
 /**
  * Result returned from batch operations.
@@ -123,6 +129,35 @@ export type BatchKysely<DB> = Kysely<DB> & BatchMethods<DB>;
  */
 export type BatchTransaction<DB> = Transaction<DB> & BatchMethods<DB>;
 
+type BatchFunctionSet<DB> = {
+  batchInsert<TB extends keyof DB & string>(
+    executor: Kysely<DB> | Transaction<DB>,
+    table: TB,
+    values: readonly Insertable<DB[TB]>[],
+  ): Promise<BatchResult>;
+  batchUpdate<TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+    executor: Kysely<DB> | Transaction<DB>,
+    table: TB,
+    values: readonly Updateable<DB[TB]>[],
+    options: { key: K | readonly K[] },
+  ): Promise<BatchResult>;
+  batchUpsert<TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+    executor: Kysely<DB> | Transaction<DB>,
+    table: TB,
+    values: readonly Insertable<DB[TB]>[],
+    options: { key: K | readonly K[] },
+  ): Promise<BatchResult>;
+};
+
+function isTransactionBuilder<DB>(value: unknown): value is TransactionBuilder<DB> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'execute' in value &&
+    typeof (value as { execute?: unknown }).execute === 'function'
+  );
+}
+
 /**
  * Checks if the executor is already inside a transaction.
  *
@@ -179,32 +214,14 @@ export async function withAutoTransaction<DB, T>(
  * @internal
  */
 function createTransactionBuilderProxy<DB>(
-  builder: any,
-  batchFunctions: {
-    batchInsert: <TB extends keyof DB & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Insertable<DB[TB]>[],
-    ) => Promise<BatchResult>;
-    batchUpdate: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Updateable<DB[TB]>[],
-      options: { key: K | readonly K[] },
-    ) => Promise<BatchResult>;
-    batchUpsert: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Insertable<DB[TB]>[],
-      options: { key: K | readonly K[] },
-    ) => Promise<BatchResult>;
-  },
-): any {
+  builder: TransactionBuilder<DB>,
+  batchFunctions: BatchFunctionSet<DB>,
+): TransactionBuilder<DB> {
   return new Proxy(builder, {
-    get(builderTarget, builderProp) {
+    get(builderTarget, builderProp, receiver) {
       // Intercept execute to wrap the transaction with batch methods
       if (builderProp === 'execute') {
-        return async (callback: (tx: BatchTransaction<DB>) => Promise<any>) => {
+        return async <T>(callback: (tx: BatchTransaction<DB>) => Promise<T>) => {
           return builderTarget.execute(async (tx: Transaction<DB>) => {
             const batchTx = createBatchAwareKysely(tx, batchFunctions) as BatchTransaction<DB>;
             return callback(batchTx);
@@ -213,14 +230,14 @@ function createTransactionBuilderProxy<DB>(
       }
 
       // Forward all other TransactionBuilder methods
-      const value = Reflect.get(builderTarget, builderProp);
+      const value = Reflect.get(builderTarget, builderProp, receiver);
       if (typeof value === 'function') {
-        return (...args: any[]) => {
+        return (...args: unknown[]) => {
           const result = value.apply(builderTarget, args);
 
           // If the result is a TransactionBuilder (has execute), re-proxy it
           // This handles immutable builders that return new instances
-          if (result && typeof result === 'object' && 'execute' in result) {
+          if (isTransactionBuilder<DB>(result)) {
             return createTransactionBuilderProxy<DB>(result, batchFunctions);
           }
 
@@ -247,39 +264,32 @@ function createTransactionBuilderProxy<DB>(
  */
 export function createBatchAwareKysely<DB>(
   kysely: Kysely<DB> | Transaction<DB>,
-  batchFunctions: {
-    batchInsert: <TB extends keyof DB & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Insertable<DB[TB]>[],
-    ) => Promise<BatchResult>;
-    batchUpdate: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Updateable<DB[TB]>[],
-      options: { key: K | readonly K[] },
-    ) => Promise<BatchResult>;
-    batchUpsert: <TB extends keyof DB & string, K extends keyof DB[TB] & string>(
-      executor: Kysely<DB> | Transaction<DB>,
-      table: TB,
-      values: readonly Insertable<DB[TB]>[],
-      options: { key: K | readonly K[] },
-    ) => Promise<BatchResult>;
-  },
+  batchFunctions: BatchFunctionSet<DB>,
 ): BatchKysely<DB> {
-  const batchMethods: BatchMethods<DB> = {
-    async batchInsert(table, values) {
+  const batchMethods = {
+    async batchInsert<TB extends keyof DB & string>(
+      table: TB,
+      values: readonly Insertable<DB[TB]>[],
+    ) {
       return batchFunctions.batchInsert(kysely, table, values);
     },
 
-    async batchUpdate(table, values, options) {
+    async batchUpdate<TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+      table: TB,
+      values: readonly Updateable<DB[TB]>[],
+      options: { key: K | readonly K[] },
+    ) {
       return batchFunctions.batchUpdate(kysely, table, values, options);
     },
 
-    async batchUpsert(table, values, options) {
+    async batchUpsert<TB extends keyof DB & string, K extends keyof DB[TB] & string>(
+      table: TB,
+      values: readonly Insertable<DB[TB]>[],
+      options: { key: K | readonly K[] },
+    ) {
       return batchFunctions.batchUpsert(kysely, table, values, options);
     },
-  };
+  } satisfies BatchMethods<DB>;
 
   return new Proxy(kysely, {
     get(target, prop, receiver) {
